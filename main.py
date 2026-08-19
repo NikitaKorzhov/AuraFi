@@ -1,3 +1,28 @@
+import json
+import os
+#File storage
+file_path = "transactions.json" #File name to save transactions list
+def write_transactions(transactions:list):
+    """Function to write entire transactions into file
+
+    :param transactions: list of transactions
+    :type transactions: list"""
+    with open(file_path, "w", encoding="utf-8") as file:
+        json.dump(transactions, file, indent=4, ensure_ascii=False)
+
+def read_transactions():
+    """Function to read entire transactions from file into list"""
+    if os.path.exists(file_path):
+        with open(file_path, "r", encoding="utf-8") as file:
+            try:
+                return json.load(file)
+            except json.JSONDecodeError:
+                return []
+    else:
+      return []
+#--------------------------------------------------------------
+
+
 RED = "\033[31m"
 GREEN = "\033[32m"
 YELLOW = "\033[33m"
@@ -69,6 +94,7 @@ def add_transaction(transaction_type:str):
         transactions.append(transaction)
         print(f"{GREEN}{transaction_type} added successfully!{RESET}\n{YELLOW}{transaction}{RESET}\n\nSee transaction list below")
         show_all_transactions()
+        write_transactions(transactions)
 
 
 def show_all_transactions():
@@ -92,6 +118,7 @@ def delete_transaction():
                 removed = transactions.pop(idx)
                 print(f"{ORANGE}Transaction {removed} deleted.{RESET}\n\nSee transaction list below")
                 show_all_transactions()
+                write_transactions(transactions)
             else:
                 print(f"{RED}Error: Index out of range.{RESET}")
 
@@ -101,6 +128,7 @@ command_dict={1:"input income", 2:"input expense",3:"show all transactions",4:"d
 
 
 #While loop executing program
+transactions=read_transactions()
 while True:
     print(f"\n{ORANGE}Command list: {command_dict}{RESET}")
     command = input(f"{BLUE}Input your command number:{RESET} ").strip()
