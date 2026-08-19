@@ -22,7 +22,7 @@ def read_transactions():
       return []
 #--------------------------------------------------------------
 
-
+#Color string before output
 RED = "\033[31m"
 GREEN = "\033[32m"
 YELLOW = "\033[33m"
@@ -31,10 +31,19 @@ BLUE = "\033[34m"
 PURPLE = "\033[38;2;155;81;224m"
 RESET = "\033[0m"
 
+def color_string(color,text):
+    """Function returns colored string with given color
+
+    :param color: color
+    :type color: str
+    :param text: text
+    :type text: str"""
+    return f"{color}{text}{RESET}"
+#------------------------------------------------------------------------
 
 def transaction_cancel(cancelation_char:str):
     if cancelation_char == 'q':
-        print(f"{ORANGE}Your action canceled{RESET}")
+        print(f"{color_string(ORANGE,'Your action canceled')}")
         return True
     else:
         return False
@@ -46,7 +55,7 @@ def get_input_with_cancel(prompt: str, data_type=str):
     and converting to required type (str by default).
     """
     while True:
-        value = input(f"{BLUE}{prompt}{RESET}")
+        value = input(f"{color_string(BLUE,prompt)}")
         if transaction_cancel(value):
             return None
 
@@ -54,11 +63,11 @@ def get_input_with_cancel(prompt: str, data_type=str):
             return data_type(value)
         except ValueError:
             if data_type is float:
-                print(f"{RED}Error: Please enter a valid number (e.g., 100.50).{RESET}")
+                print(f"{color_string(RED,'Error: Please enter a valid number (e.g., 100.50).')}")
             elif data_type is int:
-                print(f"{RED}Error: Please enter a valid whole number (e.g., 10).{RESET}")
+                print(f"{color_string(RED,'Error: Please enter a valid whole number (e.g., 10).')}")
             else:
-                print(f"{RED}Error: Invalid input format.{RESET}")
+                print(f"{color_string(RED,'Error: Invalid input format.')}")
 
 def input_transaction(transaction_type=""):
     fields = [
@@ -92,35 +101,35 @@ def add_transaction(transaction_type:str):
     transaction = input_transaction(transaction_type)
     if transaction is not None:
         transactions.append(transaction)
-        print(f"{GREEN}{transaction_type} added successfully!{RESET}\n{YELLOW}{transaction}{RESET}\n\nSee transaction list below")
+        print(f"{color_string(GREEN,f'{transaction_type} added successfully!')}\n{color_string(YELLOW,f'{transaction}')}\n\nSee transaction list below")
         show_all_transactions()
         write_transactions(transactions)
 
 
 def show_all_transactions():
     if not transactions:
-        print(f"{ORANGE}No transactions found.{RESET}")
+        print(f"{color_string(ORANGE,'No transactions found.')}")
     else:
         for i, t in enumerate(transactions):
-            print(f"{PURPLE}[{i}] {t}{RESET}")
+            print(f"{color_string(PURPLE,f'[{i}] {t}')}")
 
 def delete_transaction():
     if not transactions:
-        print(f"{ORANGE}No transactions to delete.{RESET}")
+        print(f"{color_string(ORANGE,'No transactions to delete.')}")
     else:
         for i, t in enumerate(transactions):
-            print(f"{PURPLE}[{i}] {t}{RESET}")
+            print(f"{color_string(PURPLE,f'[{i}] {t}')}")
 
         idx = get_input_with_cancel("Enter index to delete (or 'q'): ", int)
 
         if idx is not None:
             if 0 <= idx < len(transactions):
                 removed = transactions.pop(idx)
-                print(f"{ORANGE}Transaction {removed} deleted.{RESET}\n\nSee transaction list below")
+                print(f"{color_string(ORANGE,f'Transaction {removed} deleted.')}\n\nSee transaction list below")
                 show_all_transactions()
                 write_transactions(transactions)
             else:
-                print(f"{RED}Error: Index out of range.{RESET}")
+                print(f"{color_string(RED,'Error: Index out of range.')}")
 
 
 command_dict={1:"input income", 2:"input expense",3:"show all transactions",4:"delete transaction",5:"exit"}
@@ -130,8 +139,8 @@ command_dict={1:"input income", 2:"input expense",3:"show all transactions",4:"d
 #While loop executing program
 transactions=read_transactions()
 while True:
-    print(f"\n{ORANGE}Command list: {command_dict}{RESET}")
-    command = input(f"{BLUE}Input your command number:{RESET} ").strip()
+    print(f"\n{color_string(ORANGE,f'Command list: {command_dict}')}")
+    command = input(f"{color_string(BLUE,'Input your command number:')} ").strip()
 
     if command == "5":
         print("Thank you for using this program")
@@ -145,4 +154,4 @@ while True:
     elif command == "4":
         delete_transaction()
     else:
-        print(f"{RED}Unknown command. Please try again.{RESET}")
+        print(f"{color_string(RED,'Unknown command. Please try again.')}")
