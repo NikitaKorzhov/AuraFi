@@ -1,5 +1,15 @@
 import json
 import os
+from datetime import datetime
+#Logger
+loggerFilePath="log.txt"
+def log(message):
+    log_record = f"{datetime.utcnow().isoformat()}Z - {message}\n"
+    try:
+        with open(loggerFilePath, "a", encoding="utf-8") as file:
+            file.write(log_record)
+    except:
+        pass
 #File storage
 file_path = "transactions.json" #File name to save transactions list
 def write_transactions(transactions:list):
@@ -17,6 +27,7 @@ def read_transactions():
             try:
                 return json.load(file)
             except json.JSONDecodeError:
+                log("Error while reading transactions file")
                 return []
     else:
       return []
@@ -63,10 +74,13 @@ def get_input_with_cancel(prompt: str, data_type=str):
             return data_type(value)
         except ValueError:
             if data_type is float:
+                log("Invalid amount")
                 print(f"{color_string(RED,'Error: Please enter a valid number (e.g., 100.50).')}")
             elif data_type is int:
+                log("Invalid amount")
                 print(f"{color_string(RED,'Error: Please enter a valid whole number (e.g., 10).')}")
             else:
+                log('Invalid input for transaction_cancel')
                 print(f"{color_string(RED,'Error: Invalid input format.')}")
 
 def input_transaction(transaction_type=""):
@@ -143,6 +157,7 @@ while True:
     command = input(f"{color_string(BLUE,'Input your command number:')} ").strip()
 
     if command == "5":
+        log("Program ended")
         print("Thank you for using this program")
         break
     elif command == "1":
@@ -154,4 +169,5 @@ while True:
     elif command == "4":
         delete_transaction()
     else:
+        log(f"Command with number {command} not exists")
         print(f"{color_string(RED,'Unknown command. Please try again.')}")
