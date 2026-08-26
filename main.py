@@ -1,6 +1,13 @@
 import json
 import os
 from datetime import datetime
+
+from tracker import ExpenseTracker
+from Transaction import Transaction
+
+
+
+
 #Logger
 loggerFilePath="log.txt"
 def log(message):
@@ -114,34 +121,39 @@ transactions=[]
 def add_transaction(transaction_type:str):
     transaction = input_transaction(transaction_type)
     if transaction is not None:
-        transactions.append(transaction)
+        transactions.addTransaction(Transaction.from_data(transaction))
         print(f"{color_string(GREEN,f'{transaction_type} added successfully!')}\n{color_string(YELLOW,f'{transaction}')}\n\nSee transaction list below")
         show_all_transactions()
-        write_transactions(transactions)
+        write_transactions(transactions.to_list())
 
 
 def show_all_transactions():
     if not transactions:
         print(f"{color_string(ORANGE,'No transactions found.')}")
     else:
-        for i, t in enumerate(transactions):
-            print(f"{color_string(PURPLE,f'[{i}] {t}')}")
+         print(f"{color_string(PURPLE,transactions)}")
+
+def show_all_transactions_with_info():
+     if not transactions:
+        print(f"{color_string(ORANGE,'No transactions found.')}")
+     else:
+        transactions_Info=color_string(YELLOW,f"Income sum: {transactions.calc_income()}, Expense sum: {transactions.calc_expense()}, total: {transactions.budget_count()}")
+        print(f"{color_string(PURPLE,transactions)},\n{transactions_Info}")
 
 def delete_transaction():
     if not transactions:
         print(f"{color_string(ORANGE,'No transactions to delete.')}")
     else:
-        for i, t in enumerate(transactions):
-            print(f"{color_string(PURPLE,f'[{i}] {t}')}")
+        show_all_transactions()
 
         idx = get_input_with_cancel("Enter index to delete (or 'q'): ", int)
 
         if idx is not None:
-            if 0 <= idx < len(transactions):
-                removed = transactions.pop(idx)
+            if 0 < idx <= len(transactions.transactions):
+                removed = transactions.remove_transaction(idx)
                 print(f"{color_string(ORANGE,f'Transaction {removed} deleted.')}\n\nSee transaction list below")
                 show_all_transactions()
-                write_transactions(transactions)
+                write_transactions(transactions.to_list())
             else:
                 print(f"{color_string(RED,'Error: Index out of range.')}")
 
@@ -151,7 +163,7 @@ command_dict={1:"input income", 2:"input expense",3:"show all transactions",4:"d
 
 
 #While loop executing program
-transactions=read_transactions()
+transactions=ExpenseTracker.from_data(read_transactions())
 while True:
     print(f"\n{color_string(ORANGE,f'Command list: {command_dict}')}")
     command = input(f"{color_string(BLUE,'Input your command number:')} ").strip()
@@ -165,7 +177,7 @@ while True:
     elif command == "2":
         add_transaction("expense")
     elif command == "3":
-        show_all_transactions()
+        show_all_transactions_with_info()
     elif command == "4":
         delete_transaction()
     else:
