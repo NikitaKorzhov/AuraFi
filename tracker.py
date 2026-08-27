@@ -13,33 +13,43 @@ class ExpenseTracker:
         tracker = cls()
         for item in data:
             tx = Transaction.from_data(item)
-            tracker.addTransaction(tx)
+            tracker.add_transaction(tx)
         return tracker
 
     def set_budget(self, category: str, limit: float):
+        category = category.lower()
         self.budgets[category] = Budget(category, limit)
 
+    def get_budget_limits(self):
+        return list(
+            (
+                category,
+                sum(t.amount for t in self.get_expenses_by_category(category)),
+                budget.monthly_limit,
+            )
+            for category, budget in self.budgets.items()
+        )
     def get_expenses_by_category(self, category: str) -> list[Expense]:
         """Finds expenses in the overall transaction list by category"""
+        category = category.lower()
         return [
             t
             for t in self.transactions
-            if isinstance(t, Expense) and t.category == category
+            if isinstance(t, Expense) and t.category.lower() == category
         ]
 
-    def addTransaction(self, transaction: Transaction):
+    def add_transaction(self, transaction: Transaction):
         # If this is an expense and a budget limit is set for this category
-        if isinstance(transaction, Expense) and transaction.category in self.budgets:
-            # Calculate how much has already been spent in this category
-            current_spent = sum(
-                t.amount
-                for t in self.get_expenses_by_category(transaction.category)
-            )
-
-            budget = self.budgets[transaction.category]
+        category = transaction.category.lower()
+        if isinstance(transaction, Expense) and category in self.budgets:
+            budget = self.budgets[category]
 
             # Check whether the new expense would exceed the limit
-            if current_spent + transaction.amount > budget.monthly_limit:
+            if budget.check_limit(self.transactions + [transaction]):
+                current_spent = sum(
+                    t.amount
+                    for t in self.get_expenses_by_category(transaction.category)
+                )
                 raise ValueError(
                     f"⚠️ Limit exceeded! Category '{transaction.category}' "
                     f"has a limit of {budget.monthly_limit}, but expenses would become {current_spent + transaction.amount}"

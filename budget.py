@@ -9,6 +9,6 @@ class Budget:
         total_spent = sum(
             tx.amount
             for tx in transactions
-            if isinstance(tx, Transaction) and tx.category == self.category
+            if isinstance(tx, Transaction) and tx.category.lower() == self.category
         )
         return total_spent > self.monthly_limit

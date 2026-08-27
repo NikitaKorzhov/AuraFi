@@ -16,7 +16,7 @@ def log(message):
         with open(loggerFilePath, "a", encoding="utf-8") as file:
             file.write(log_record)
     except:
-        pass
+        print(f"{color_string(RED,'Cannot get access to log file')}")
 #File storage
 file_path = "transactions.json" #File name to save transactions list
 def write_transactions(transactions:list):
@@ -24,8 +24,16 @@ def write_transactions(transactions:list):
 
     :param transactions: list of transactions
     :type transactions: list"""
-    with open(file_path, "w", encoding="utf-8") as file:
-        json.dump(transactions, file, indent=4, ensure_ascii=False)
+    clean_data = []
+    for item in transactions:
+        cleaned_item = {
+            k: (v.encode('utf-8', 'ignore').decode('utf-8') if isinstance(v, str) else v)
+            for k, v in item.items()
+        }
+        clean_data.append(cleaned_item)
+
+    with open(file_path, "w", encoding="utf-8") as f:
+        json.dump(clean_data, f, indent=4, ensure_ascii=False)
 
 def read_transactions():
     """Function to read entire transactions from file into list"""
@@ -116,12 +124,17 @@ def input_transaction(transaction_type=""):
 
 
 #Transaction list and functions to operate with it from console
-transactions=[]
+
 
 def add_transaction(transaction_type:str):
     transaction = input_transaction(transaction_type)
     if transaction is not None:
-        transactions.addTransaction(Transaction.from_data(transaction))
+        try:
+            transactions.add_transaction(Transaction.from_data(transaction))
+        except ValueError as e:
+            log(f"Budget limit exceeded: {e}")
+            print(f"{color_string(RED,str(e))}")
+            return
         print(f"{color_string(GREEN,f'{transaction_type} added successfully!')}\n{color_string(YELLOW,f'{transaction}')}\n\nSee transaction list below")
         show_all_transactions()
         write_transactions(transactions.to_list())
@@ -138,7 +151,11 @@ def show_all_transactions_with_info():
         print(f"{color_string(ORANGE,'No transactions found.')}")
      else:
         transactions_Info=color_string(YELLOW,f"Income sum: {transactions.calc_income()}, Expense sum: {transactions.calc_expense()}, total: {transactions.budget_count()}")
-        print(f"{color_string(PURPLE,transactions)},\n{transactions_Info}")
+        budget_line = "\n".join(
+            f"• {cat}: {spent} / {limit} грн"
+            for cat, spent, limit in transactions.get_budget_limits()
+        )
+        print(f"{color_string(PURPLE,transactions)},\n{transactions_Info}\n\n{budget_line}")
 
 def delete_transaction():
     if not transactions:
@@ -164,6 +181,9 @@ command_dict={1:"input income", 2:"input expense",3:"show all transactions",4:"d
 
 #While loop executing program
 transactions=ExpenseTracker.from_data(read_transactions())
+transactions.set_budget("Subscribes", 2000)
+transactions.set_budget("food", 15000)
+transactions.set_budget("medicine", 5000)
 while True:
     print(f"\n{color_string(ORANGE,f'Command list: {command_dict}')}")
     command = input(f"{color_string(BLUE,'Input your command number:')} ").strip()
