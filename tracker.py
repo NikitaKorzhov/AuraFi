@@ -1,12 +1,11 @@
-from budget import Budget
 from Transaction import Expense, Income, Transaction
-
+from budget_manager import BudgetManager
 
 class ExpenseTracker:
 
     def __init__(self):
         self.transactions: list[Transaction] = []
-        self.budgets: dict[str, Budget] = {}  # Key - category, value - Budget
+        self.budget_manager: BudgetManager = BudgetManager()
 
     @classmethod
     def from_data(cls, data: list[dict]):
@@ -17,18 +16,11 @@ class ExpenseTracker:
         return tracker
 
     def set_budget(self, category: str, limit: float):
-        category = category.lower()
-        self.budgets[category] = Budget(category, limit)
+        self.budget_manager.set_budget(category, limit)
 
     def get_budget_limits(self):
-        return list(
-            (
-                category,
-                sum(t.amount for t in self.get_expenses_by_category(category)),
-                budget.monthly_limit,
-            )
-            for category, budget in self.budgets.items()
-        )
+        return self.budget_manager.get_limits_data(self.transactions)
+
     def get_expenses_by_category(self, category: str) -> list[Expense]:
         """Finds expenses in the overall transaction list by category"""
         category = category.lower()
@@ -39,22 +31,10 @@ class ExpenseTracker:
         ]
 
     def add_transaction(self, transaction: Transaction):
-        # If this is an expense and a budget limit is set for this category
-        category = transaction.category.lower()
-        if isinstance(transaction, Expense) and category in self.budgets:
-            budget = self.budgets[category]
-
-            # Check whether the new expense would exceed the limit
-            if budget.check_limit(self.transactions + [transaction]):
-                current_spent = sum(
-                    t.amount
-                    for t in self.get_expenses_by_category(transaction.category)
-                )
-                raise ValueError(
-                    f"⚠️ Limit exceeded! Category '{transaction.category}' "
-                    f"has a limit of {budget.monthly_limit}, but expenses would become {current_spent + transaction.amount}"
-                )
-
+        if not isinstance(transaction, Transaction):
+            raise TypeError("Transaction must be of type Transaction.")
+        if isinstance(transaction, Expense):
+           self.budget_manager.validate_expense(transaction, self.transactions)
         self.transactions.append(transaction)
 
     def remove_transaction(self, index: int):
