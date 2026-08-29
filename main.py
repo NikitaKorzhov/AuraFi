@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import json
 import os
 from datetime import datetime
@@ -67,12 +69,26 @@ def color_string(color,text):
     return f"{color}{text}{RESET}"
 #------------------------------------------------------------------------
 
-def transaction_cancel(cancelation_char:str):
-    if cancelation_char == 'q':
+def is_cancel_requested(cancellation_char:str):
+    if cancellation_char == 'q':
         print(f"{color_string(ORANGE,'Your action canceled')}")
         return True
     else:
         return False
+
+
+def parse_amount(value: str) -> float | int:
+    """Parses a user-entered amount as int (whole numbers) or float (with a decimal part).
+
+    Rejects more than 2 digits after the decimal point (amounts are stored in kopecks).
+    """
+    normalized = value.replace(",", ".")
+    if "." in normalized:
+        decimal_part = normalized.split(".", 1)[1]
+        if len(decimal_part) > 2:
+            raise ValueError("Too many decimal places")
+        return float(normalized)
+    return int(normalized)
 
 
 def get_input_with_cancel(prompt: str, data_type=str):
@@ -82,25 +98,25 @@ def get_input_with_cancel(prompt: str, data_type=str):
     """
     while True:
         value = input(f"{color_string(BLUE,prompt)}")
-        if transaction_cancel(value):
+        if is_cancel_requested(value):
             return None
 
         try:
             return data_type(value)
         except ValueError:
-            if data_type is float:
+            if data_type is parse_amount:
                 log("Invalid amount")
-                print(f"{color_string(RED,'Error: Please enter a valid number (e.g., 100.50).')}")
+                print(f"{color_string(RED,'Error: Please enter a valid number (e.g., 100 or 100.50).')}")
             elif data_type is int:
                 log("Invalid amount")
                 print(f"{color_string(RED,'Error: Please enter a valid whole number (e.g., 10).')}")
             else:
-                log('Invalid input for transaction_cancel')
+                log('Invalid input for is_cancel_requested')
                 print(f"{color_string(RED,'Error: Invalid input format.')}")
 
 def input_transaction(transaction_type=""):
     fields = [
-        ("amount", float),
+        ("amount", parse_amount),
         ("category", str)
     ]
 
@@ -130,7 +146,7 @@ def add_transaction(transaction_type:str):
     transaction = input_transaction(transaction_type)
     if transaction is not None:
         try:
-            transactions.add_transaction(Transaction.from_data(transaction))
+            transactions.add_transaction(Transaction.from_input(transaction))
         except ValueError as e:
             log(f"Budget limit exceeded: {e}")
             print(f"{color_string(RED,str(e))}")
@@ -150,7 +166,7 @@ def show_all_transactions_with_info():
      if not transactions:
         print(f"{color_string(ORANGE,'No transactions found.')}")
      else:
-        transactions_Info=color_string(YELLOW,f"Income sum: {transactions.calc_income()}, Expense sum: {transactions.calc_expense()}, total: {transactions.budget_count()}")
+        transactions_Info=color_string(YELLOW,f"Income sum: {transactions.calc_income()}, Expense sum: {transactions.calc_expense()}, total: {transactions.calc_balance()}")
         budget_line = "\n".join(
             f"• {cat}: {spent} / {limit} грн"
             for cat, spent, limit in transactions.get_budget_limits()

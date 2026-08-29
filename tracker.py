@@ -1,5 +1,8 @@
+from __future__ import annotations
+
 from Transaction import Expense, Income, Transaction
 from budget_manager import BudgetManager
+from money import to_display
 
 class ExpenseTracker:
 
@@ -54,14 +57,14 @@ class ExpenseTracker:
         else:
             raise IndexError("❌ No transaction with this number exists.")
 
-    def budget_count(self) -> int:
-        return sum(self.transactions)
+    def calc_balance(self) -> float | int:
+        return to_display(sum(self.transactions))
 
-    def calc_income(self) -> int:
-        return sum(x.amount for x in self.transactions if isinstance(x, Income))
+    def calc_income(self) -> float | int:
+        return to_display(sum(x.amount_kopecks for x in self.transactions if isinstance(x, Income)))
 
-    def calc_expense(self) -> int:
-        return sum(x.amount for x in self.transactions if isinstance(x, Expense))
+    def calc_expense(self) -> float | int:
+        return to_display(sum(x.amount_kopecks for x in self.transactions if isinstance(x, Expense)))
 
     def to_list(self) -> list[dict]:
         return [transaction.to_dict() for transaction in self.transactions]

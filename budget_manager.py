@@ -1,11 +1,14 @@
+from __future__ import annotations
+
 from budget import Budget
 from Transaction import Expense, Transaction
+from money import to_display
 
 class BudgetManager:
     def __init__(self):
         self.budgets: dict[str, Budget] = {}
 
-    def set_budget(self, category: str, limit: float):
+    def set_budget(self, category: str, limit: float | int):
         category = category.lower()
         self.budgets[category] = Budget(category, limit)
 
@@ -25,7 +28,11 @@ class BudgetManager:
         return [
             (
                 category,
-                sum(t.amount for t in current_transactions if isinstance(t, Expense) and t.category.lower() == category),
+                to_display(sum(
+                    t.amount_kopecks
+                    for t in current_transactions
+                    if isinstance(t, Expense) and t.category.lower() == category
+                )),
                 budget.monthly_limit,
             )
             for category, budget in self.budgets.items()
