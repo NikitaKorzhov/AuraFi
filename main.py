@@ -6,19 +6,13 @@ from datetime import datetime
 
 from tracker import ExpenseTracker
 from Transaction import Transaction
+from logger import get_logger
 
 
 
 
 #Logger
-loggerFilePath="log.txt"
-def log(message):
-    log_record = f"{datetime.utcnow().isoformat()}Z - {message}\n"
-    try:
-        with open(loggerFilePath, "a", encoding="utf-8") as file:
-            file.write(log_record)
-    except:
-        print(f"{color_string(RED,'Cannot get access to log file')}")
+log=get_logger(__name__)
 #File storage
 file_path = "transactions.json" #File name to save transactions list
 def write_transactions(transactions:list):
@@ -44,7 +38,7 @@ def read_transactions():
             try:
                 return json.load(file)
             except json.JSONDecodeError:
-                log("Error while reading transactions file")
+                log.error("Error while reading transactions file")
                 return []
     else:
       return []
@@ -105,13 +99,13 @@ def get_input_with_cancel(prompt: str, data_type=str):
             return data_type(value)
         except ValueError:
             if data_type is parse_amount:
-                log("Invalid amount")
+                log.error("Invalid amount")
                 print(f"{color_string(RED,'Error: Please enter a valid number (e.g., 100 or 100.50).')}")
             elif data_type is int:
-                log("Invalid amount")
+                log.error("Invalid amount")
                 print(f"{color_string(RED,'Error: Please enter a valid whole number (e.g., 10).')}")
             else:
-                log('Invalid input for is_cancel_requested')
+                log.error('Invalid input for is_cancel_requested')
                 print(f"{color_string(RED,'Error: Invalid input format.')}")
 
 def input_transaction(transaction_type=""):
@@ -148,7 +142,7 @@ def add_transaction(transaction_type:str):
         try:
             transactions.add_transaction(Transaction.from_input(transaction))
         except ValueError as e:
-            log(f"Budget limit exceeded: {e}")
+            log.error(f"Budget limit exceeded: {e}")
             print(f"{color_string(RED,str(e))}")
             return
         print(f"{color_string(GREEN,f'{transaction_type} added successfully!')}\n{color_string(YELLOW,f'{transaction}')}\n\nSee transaction list below")
@@ -196,6 +190,7 @@ command_dict={1:"input income", 2:"input expense",3:"show all transactions",4:"d
 
 
 #While loop executing program
+log.info("Program starts")
 transactions=ExpenseTracker.from_data(read_transactions())
 transactions.set_budget("Subscribes", 2000)
 transactions.set_budget("food", 15000)
@@ -205,7 +200,7 @@ while True:
     command = input(f"{color_string(BLUE,'Input your command number:')} ").strip()
 
     if command == "5":
-        log("Program ended")
+        log.info("Program ended")
         print("Thank you for using this program")
         break
     elif command == "1":
@@ -217,5 +212,5 @@ while True:
     elif command == "4":
         delete_transaction()
     else:
-        log(f"Command with number {command} not exists")
+        log.error(f"Command with number {command} not exists")
         print(f"{color_string(RED,'Unknown command. Please try again.')}")
