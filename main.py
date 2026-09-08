@@ -7,6 +7,7 @@ from datetime import datetime
 from tracker import ExpenseTracker
 from Transaction import Transaction
 from logger import get_logger
+from cli.output import Outer
 
 
 
@@ -44,28 +45,10 @@ def read_transactions():
       return []
 #--------------------------------------------------------------
 
-#Color string before output
-RED = "\033[31m"
-GREEN = "\033[32m"
-YELLOW = "\033[33m"
-ORANGE = "\033[38;2;255;165;0m"
-BLUE = "\033[34m"
-PURPLE = "\033[38;2;155;81;224m"
-RESET = "\033[0m"
-
-def color_string(color,text):
-    """Function returns colored string with given color
-
-    :param color: color
-    :type color: str
-    :param text: text
-    :type text: str"""
-    return f"{color}{text}{RESET}"
-#------------------------------------------------------------------------
 
 def is_cancel_requested(cancellation_char:str):
     if cancellation_char == 'q':
-        print(f"{color_string(ORANGE,'Your action canceled')}")
+        Outer.append_orange("Your action canceled").print()
         return True
     else:
         return False
@@ -91,7 +74,7 @@ def get_input_with_cancel(prompt: str, data_type=str):
     and converting to required type (str by default).
     """
     while True:
-        value = input(f"{color_string(BLUE,prompt)}")
+        value = input(f"{Outer.append_blue(prompt)} ").strip()
         if is_cancel_requested(value):
             return None
 
@@ -100,13 +83,13 @@ def get_input_with_cancel(prompt: str, data_type=str):
         except ValueError:
             if data_type is parse_amount:
                 log.error("Invalid amount")
-                print(f"{color_string(RED,'Error: Please enter a valid number (e.g., 100 or 100.50).')}")
+                Outer.append_red("Error: Please enter a valid number (e.g., 100 or 100.50).").print()
             elif data_type is int:
                 log.error("Invalid amount")
-                print(f"{color_string(RED,'Error: Please enter a valid whole number (e.g., 10).')}")
+                Outer.append_red("Error: Please enter a valid whole number (e.g., 10).").print()
             else:
                 log.error('Invalid input for is_cancel_requested')
-                print(f"{color_string(RED,'Error: Invalid input format.')}")
+                Outer.append_red("Error: Invalid input format.").print()
 
 def input_transaction(transaction_type=""):
     fields = [
@@ -143,33 +126,36 @@ def add_transaction(transaction_type:str):
             transactions.add_transaction(Transaction.from_input(transaction))
         except ValueError as e:
             log.error(f"Budget limit exceeded: {e}")
-            print(f"{color_string(RED,str(e))}")
+            Outer.append_red(f"Error: {e}").print()
             return
-        print(f"{color_string(GREEN,f'{transaction_type} added successfully!')}\n{color_string(YELLOW,f'{transaction}')}\n\nSee transaction list below")
+        out = Outer
+        out.append_green(f"{transaction_type} added successfully! ").append_yellow(f"{transaction}").new_line().new_line().append_blue("See transaction list below").print()
         show_all_transactions()
         write_transactions(transactions.to_list())
 
 
 def show_all_transactions():
     if not transactions:
-        print(f"{color_string(ORANGE,'No transactions found.')}")
+        Outer.append_orange("No transactions found.").print()
     else:
-         print(f"{color_string(PURPLE,transactions)}")
+         Outer.append_purple(f"{transactions}").print()
 
 def show_all_transactions_with_info():
      if not transactions:
-        print(f"{color_string(ORANGE,'No transactions found.')}")
+        Outer.append_orange("No transactions found.").print()
      else:
-        transactions_Info=color_string(YELLOW,f"Income sum: {transactions.calc_income()}, Expense sum: {transactions.calc_expense()}, total: {transactions.calc_balance()}")
+        transactions_Info=Outer.append_yellow(f"Income sum: {transactions.calc_income()}, Expense sum: {transactions.calc_expense()}, total:{transactions.calc_balance()}")
         budget_line = "\n".join(
             f"• {cat}: {spent} / {limit} грн"
             for cat, spent, limit in transactions.get_budget_limits()
         )
-        print(f"{color_string(PURPLE,transactions)},\n{transactions_Info}\n\n{budget_line}")
+        Outer.append_purple(f"{transactions}").print()
+        Outer.append_yellow(f"{transactions_Info}").print()
+        Outer.append_blue(f"{budget_line}").print()
 
 def delete_transaction():
     if not transactions:
-        print(f"{color_string(ORANGE,'No transactions to delete.')}")
+        Outer.append_orange("No transactions to delete.").print()
     else:
         show_all_transactions()
 
@@ -178,11 +164,12 @@ def delete_transaction():
         if idx is not None:
             if 0 < idx <= len(transactions.transactions):
                 removed = transactions.remove_transaction(idx)
-                print(f"{color_string(ORANGE,f'Transaction {removed} deleted.')}\n\nSee transaction list below")
+                Outer.append_orange(f"Transaction {removed} deleted.").print()
+                Outer.append_blue("See transaction list below").print()
                 show_all_transactions()
                 write_transactions(transactions.to_list())
             else:
-                print(f"{color_string(RED,'Error: Index out of range.')}")
+                Outer.append_red("Error: Index out of range.").print()
 
 
 command_dict={1:"input income", 2:"input expense",3:"show all transactions",4:"delete transaction",5:"exit"}
@@ -196,12 +183,12 @@ transactions.set_budget("Subscribes", 2000)
 transactions.set_budget("food", 15000)
 transactions.set_budget("medicine", 5000)
 while True:
-    print(f"\n{color_string(ORANGE,f'Command list: {command_dict}')}")
-    command = input(f"{color_string(BLUE,'Input your command number:')} ").strip()
+    Outer.append_orange(f"Command list: {command_dict}").print()
+    command = input(f"{Outer.append_blue('Input your command number: ')} ").strip()
 
     if command == "5":
         log.info("Program ended")
-        print("Thank you for using this program")
+        Outer.append_green("Thank you for using this program").print()
         break
     elif command == "1":
         add_transaction("income")
@@ -213,4 +200,4 @@ while True:
         delete_transaction()
     else:
         log.error(f"Command with number {command} not exists")
-        print(f"{color_string(RED,'Unknown command. Please try again.')}")
+        Outer.append_red("Unknown command. Please try again.").print()
