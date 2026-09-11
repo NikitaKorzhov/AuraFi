@@ -8,6 +8,7 @@ from tracker import ExpenseTracker
 from Transaction import Transaction
 from logger import get_logger
 from cli.output import Outer
+from cli.input import input_transaction1,input_index_to_delete
 
 
 
@@ -68,51 +69,20 @@ def parse_amount(value: str) -> float | int:
     return int(normalized)
 
 
-def get_input_with_cancel(prompt: str, data_type=str):
-    """
-    Function to cancel action by key 'q'
-    and converting to required type (str by default).
-    """
-    while True:
-        value = input(f"{Outer.append_blue(prompt)} ").strip()
-        if is_cancel_requested(value):
-            return None
-
-        try:
-            return data_type(value)
-        except ValueError:
-            if data_type is parse_amount:
-                log.error("Invalid amount")
-                Outer.append_red("Error: Please enter a valid number (e.g., 100 or 100.50).").print()
-            elif data_type is int:
-                log.error("Invalid amount")
-                Outer.append_red("Error: Please enter a valid whole number (e.g., 10).").print()
-            else:
-                log.error('Invalid input for is_cancel_requested')
-                Outer.append_red("Error: Invalid input format.").print()
-
 def input_transaction(transaction_type=""):
-    fields = [
-        ("amount", parse_amount),
-        ("category", str)
-    ]
+    transaction = {
+        "amount": float,
+        "category": str,
+    }
+    transaction=input_transaction1(transaction)
 
-    transaction = {}
+    if not transaction:
+        log.warning("Transaction input canceled by user")
+        Outer.append_yellow("Transaction input canceled.").print()
+        return None
 
     if transaction_type in ["income", "expense"]:
         transaction["type"] = transaction_type
-    else:
-        fields.insert(1, ("type", str))
-
-    for key, data_type in fields:
-        prompt = f"Input {key} (or 'q' to cancel): "
-
-        value = get_input_with_cancel(prompt, data_type)
-        if value is None:
-            return None
-
-        transaction[key] = value
-
     return transaction
 
 
@@ -159,7 +129,7 @@ def delete_transaction():
     else:
         show_all_transactions()
 
-        idx = get_input_with_cancel("Enter index to delete (or 'q'): ", int)
+        idx = input_index_to_delete(Outer.append_blue("Enter index to delete (or 'q'): "), f"Invalid index. Please enter a number between 1 and {len(transactions.transactions)}.")
 
         if idx is not None:
             if 0 < idx <= len(transactions.transactions):
@@ -169,7 +139,8 @@ def delete_transaction():
                 show_all_transactions()
                 write_transactions(transactions.to_list())
             else:
-                Outer.append_red("Error: Index out of range.").print()
+                log.error(f"Index {idx} out of range (1-{len(transactions.transactions)}) for deletion")
+                Outer.append_red(f"Error: Index out of range 1-{len(transactions.transactions)}.").print()
 
 
 command_dict={1:"input income", 2:"input expense",3:"show all transactions",4:"delete transaction",5:"exit"}
