@@ -1,17 +1,12 @@
 from __future__ import annotations
-
 import json
 import os
 from datetime import datetime
-
 from tracker import ExpenseTracker
 from Transaction import Transaction
 from logger import get_logger
 from cli.output import Outer
 from cli.input import input_transaction1,input_index_to_delete
-
-
-
 
 #Logger
 log=get_logger(__name__)
@@ -53,21 +48,6 @@ def is_cancel_requested(cancellation_char:str):
         return True
     else:
         return False
-
-
-def parse_amount(value: str) -> float | int:
-    """Parses a user-entered amount as int (whole numbers) or float (with a decimal part).
-
-    Rejects more than 2 digits after the decimal point (amounts are stored in kopecks).
-    """
-    normalized = value.replace(",", ".")
-    if "." in normalized:
-        decimal_part = normalized.split(".", 1)[1]
-        if len(decimal_part) > 2:
-            raise ValueError("Too many decimal places")
-        return float(normalized)
-    return int(normalized)
-
 
 def input_transaction(transaction_type=""):
     transaction = {
