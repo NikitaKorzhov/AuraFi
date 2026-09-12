@@ -1,5 +1,7 @@
 
 .idea/
+aura_venv/
+venv/
 transactions.json
 log.txt
 # Byte-compiled / optimized / DLL files
