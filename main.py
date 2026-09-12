@@ -151,6 +151,7 @@ def main():
 
 #execution of the program
 command_dict={1:"input income", 2:"input expense",3:"show all transactions",4:"delete transaction",5:"exit"}
-transactions=ExpenseTracker.from_data(read_transactions())
+transactions=None
 if __name__ == "__main__":
+    transactions = ExpenseTracker.from_data(read_transactions())
     main()
