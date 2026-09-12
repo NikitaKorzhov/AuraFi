@@ -123,32 +123,34 @@ def delete_transaction():
                 Outer.append_red(f"Error: Index out of range 1-{len(transactions.transactions)}.").print()
 
 
+#Main function to run the program
+def main():
+    log.info("Program starts")
+    transactions.set_budget("Subscribes", 2000)
+    transactions.set_budget("food", 15000)
+    transactions.set_budget("medicine", 5000)
+    while True:
+        Outer.append_orange(f"Command list: {command_dict}").print()
+        command = input(f"{Outer.append_blue('Input your command number: ')} ").strip()
+
+        if command == "5":
+            log.info("Program ended")
+            Outer.append_green("Thank you for using this program").print()
+            break
+        elif command == "1":
+            add_transaction("income")
+        elif command == "2":
+            add_transaction("expense")
+        elif command == "3":
+            show_all_transactions_with_info()
+        elif command == "4":
+            delete_transaction()
+        else:
+            log.error(f"Command with number {command} not exists")
+            Outer.append_red("Unknown command. Please try again.").print()
+
+#execution of the program
 command_dict={1:"input income", 2:"input expense",3:"show all transactions",4:"delete transaction",5:"exit"}
-
-
-
-#While loop executing program
-log.info("Program starts")
 transactions=ExpenseTracker.from_data(read_transactions())
-transactions.set_budget("Subscribes", 2000)
-transactions.set_budget("food", 15000)
-transactions.set_budget("medicine", 5000)
-while True:
-    Outer.append_orange(f"Command list: {command_dict}").print()
-    command = input(f"{Outer.append_blue('Input your command number: ')} ").strip()
-
-    if command == "5":
-        log.info("Program ended")
-        Outer.append_green("Thank you for using this program").print()
-        break
-    elif command == "1":
-        add_transaction("income")
-    elif command == "2":
-        add_transaction("expense")
-    elif command == "3":
-        show_all_transactions_with_info()
-    elif command == "4":
-        delete_transaction()
-    else:
-        log.error(f"Command with number {command} not exists")
-        Outer.append_red("Unknown command. Please try again.").print()
+if __name__ == "__main__":
+    main()
