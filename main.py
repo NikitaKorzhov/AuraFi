@@ -2,8 +2,7 @@ from __future__ import annotations
 import json
 import os
 from datetime import datetime
-from tracker import ExpenseTracker
-from Transaction import Transaction
+from expense_tracker import Transaction, ExpenseTracker
 from logger import get_logger
 from cli.output import Outer
 from cli.input import input_transaction1,input_index_to_delete
