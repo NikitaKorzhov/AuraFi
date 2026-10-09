@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 
+from expense_tracker.constants import EXPENSE_CATEGORIES, INCOME_CATEGORIES
 from expense_tracker.models import Transaction
 from expense_tracker.tracker import ExpenseTracker
 from logger import get_logger
@@ -57,9 +58,10 @@ def is_cancel_requested(cancellation_char: str):
 
 
 def input_transaction(transaction_type=""):
+    categories = INCOME_CATEGORIES if transaction_type == "income" else EXPENSE_CATEGORIES
     transaction = {
         "amount": float,
-        "category": str,
+        "category": categories,
     }
     transaction = input_transaction1(transaction)
 

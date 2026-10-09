@@ -1,3 +1,3 @@
-from expense_tracker.constants import TransactionCategory
+from expense_tracker.constants import TransactionCategory, EXPENSE_CATEGORIES, INCOME_CATEGORIES
 from expense_tracker.models import Transaction,Income,Expense,Budget
 from expense_tracker.tracker import BudgetManager,ExpenseTracker

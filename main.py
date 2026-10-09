@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from expense_tracker import ExpenseTracker
+from expense_tracker.constants import EXPENSE_CATEGORIES
 from expense_tracker.cli import (
     read_transactions,
     add_transaction,
@@ -18,9 +19,8 @@ command_dict = {1: "input income", 2: "input expense", 3: "show all transactions
 def main():
     log.info("Program starts")
     transactions = ExpenseTracker.from_data(read_transactions())
-    transactions.set_budget("Subscribes", 2000)
-    transactions.set_budget("food", 15000)
-    transactions.set_budget("medicine", 5000)
+    for category, limit in EXPENSE_CATEGORIES.items():
+        transactions.set_budget(category, limit)
 
     while True:
         Outer.append_orange(f"Command list: {command_dict}").print()
