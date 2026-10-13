@@ -40,7 +40,8 @@ def input_category(categories: dict, prompt_label: str = "category"):
     options = list(categories.keys())
     print(f"{colors.BLUE}Select {prompt_label} (or 'q' to cancel):{colors.RESET}")
     for i, cat in enumerate(options, start=1):
-        print(f"{colors.BLUE}{i}. {cat} (budget: {categories[cat]}){colors.RESET}")
+        limit = categories[cat] if categories[cat] is not None else "no limit"
+        print(f"{colors.BLUE}{i}. {cat} (budget: {limit}){colors.RESET}")
 
     while True:
         choice = input_value(
