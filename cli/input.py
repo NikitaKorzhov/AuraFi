@@ -34,18 +34,51 @@ def input_value(prompt: str, data_type: type, error_msg: str = "") :
             print(colors.RED + msg + colors.RESET)
 
 
+def input_category(categories: dict, prompt_label: str = "category"):
+    """Lets the user pick a category by number from a predefined {category: budget} dict,
+    instead of typing it freely."""
+    options = list(categories.keys())
+    print(f"{colors.BLUE}Select {prompt_label} (or 'q' to cancel):{colors.RESET}")
+    for i, cat in enumerate(options, start=1):
+        print(f"{colors.BLUE}{i}. {cat} (budget: {categories[cat]}){colors.RESET}")
+
+    while True:
+        choice = input_value(
+            f"{colors.BLUE}Enter number (or 'q' to cancel): {colors.RESET}",
+            int,
+            "Invalid input. Please enter a valid number.",
+        )
+        if choice is None:
+            return None  # User pressed 'q', cancel
+
+        if 1 <= choice <= len(options):
+            return options[choice - 1]
+
+        msg = f"Invalid choice. Please enter a number between 1 and {len(options)}."
+        log.error(msg)
+        print(colors.RED + msg + colors.RESET)
+
+
 def input_transaction1(transaction_dict: dict):
-    """Function to input a transaction using a configuration dictionary."""
+    """Function to input a transaction using a configuration dictionary.
+
+    Each value in `transaction_dict` is either a plain type (str/int/float) for
+    free-form input, or a {category: budget} dict to let the user pick a category
+    from a numbered list instead of typing it.
+    """
     transaction = {}
-    for key, data_type in transaction_dict.items():
-        prompt = f"{colors.BLUE}Input {key} (or 'q' to cancel): {colors.RESET}"
-        error_msg = f"Invalid input for {key}. Please enter a valid {data_type.__name__}."
-        
-        value = input_value(prompt, data_type, error_msg)
+    for key, spec in transaction_dict.items():
+        if isinstance(spec, dict):
+            value = input_category(spec, prompt_label=key)
+        else:
+            prompt = f"{colors.BLUE}Input {key} (or 'q' to cancel): {colors.RESET}"
+            error_msg = f"Invalid input for {key}. Please enter a valid {spec.__name__}."
+            value = input_value(prompt, spec, error_msg)
+
         if value is None:
             return None  # User pressed 'q', cancel the entire transaction
         transaction[key] = value
-        
+
     return transaction
 
 def input_int(prompt: str):
