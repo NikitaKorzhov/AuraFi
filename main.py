@@ -1,157 +1,166 @@
 from __future__ import annotations
-import json
-import os
-from datetime import datetime
-from tracker import ExpenseTracker
-from Transaction import Transaction
+
+import getpass
+import sqlite3
+
+from database import init_db
+from expense_tracker import ExpenseTracker, Income, Expense
+from expense_tracker.cli import input_transaction
+from models import authenticate_user, get_username_by_email
 from logger import get_logger
 from cli.output import Outer
-from cli.input import input_transaction1,input_index_to_delete
+from cli.input import input_index_to_delete
 
-#Logger
-log=get_logger(__name__)
-#File storage
-file_path = "transactions.json" #File name to save transactions list
-def write_transactions(transactions:list):
-    """Function to write entire transactions into file
+log = get_logger(__name__)
 
-    :param transactions: list of transactions
-    :type transactions: list"""
-    clean_data = []
-    for item in transactions:
-        cleaned_item = {
-            k: (v.encode('utf-8', 'ignore').decode('utf-8') if isinstance(v, str) else v)
-            for k, v in item.items()
-        }
-        clean_data.append(cleaned_item)
-
-    with open(file_path, "w", encoding="utf-8") as f:
-        json.dump(clean_data, f, indent=4, ensure_ascii=False)
-
-def read_transactions():
-    """Function to read entire transactions from file into list"""
-    if os.path.exists(file_path):
-        with open(file_path, "r", encoding="utf-8") as file:
-            try:
-                return json.load(file)
-            except json.JSONDecodeError:
-                log.error("Error while reading transactions file")
-                return []
-    else:
-      return []
-#--------------------------------------------------------------
+command_dict = {1: "input income", 2: "input expense", 3: "show all transactions", 4: "delete transaction", 5: "exit"}
 
 
-def is_cancel_requested(cancellation_char:str):
-    if cancellation_char == 'q':
-        Outer.append_orange("Your action canceled").print()
-        return True
-    else:
-        return False
-
-def input_transaction(transaction_type=""):
-    transaction = {
-        "amount": float,
-        "category": str,
-    }
-    transaction=input_transaction1(transaction)
-
-    if not transaction:
-        log.warning("Transaction input canceled by user")
-        Outer.append_yellow("Transaction input canceled.").print()
-        return None
-
-    if transaction_type in ["income", "expense"]:
-        transaction["type"] = transaction_type
-    return transaction
-
-
-#Transaction list and functions to operate with it from console
-
-
-def add_transaction(transaction_type:str):
-    transaction = input_transaction(transaction_type)
-    if transaction is not None:
-        try:
-            transactions.add_transaction(Transaction.from_input(transaction))
-        except ValueError as e:
-            log.error(f"Budget limit exceeded: {e}")
-            Outer.append_red(f"Error: {e}").print()
-            return
-        out = Outer
-        out.append_green(f"{transaction_type} added successfully! ").append_yellow(f"{transaction}").new_line().new_line().append_blue("See transaction list below").print()
-        show_all_transactions()
-        write_transactions(transactions.to_list())
-
-
-def show_all_transactions():
-    if not transactions:
+def show_all_transactions(tracker: ExpenseTracker):
+    if not tracker.transactions:
         Outer.append_orange("No transactions found.").print()
     else:
-         Outer.append_purple(f"{transactions}").print()
+        Outer.append_purple(f"{tracker}").print()
 
-def show_all_transactions_with_info():
-     if not transactions:
+
+def show_all_transactions_with_info(tracker: ExpenseTracker):
+    if not tracker.transactions:
         Outer.append_orange("No transactions found.").print()
-     else:
-        transactions_Info=Outer.append_yellow(f"Income sum: {transactions.calc_income()}, Expense sum: {transactions.calc_expense()}, total:{transactions.calc_balance()}")
-        budget_line = "\n".join(
-            f"• {cat}: {spent} / {limit} грн"
-            for cat, spent, limit in transactions.get_budget_limits()
-        )
-        Outer.append_purple(f"{transactions}").print()
-        Outer.append_yellow(f"{transactions_Info}").print()
-        Outer.append_blue(f"{budget_line}").print()
+        return
 
-def delete_transaction():
-    if not transactions:
+    budget_line = "\n".join(
+        f"• {cat}: {spent} / {limit} грн"
+        for cat, spent, limit in tracker.get_budget_limits()
+    )
+
+    Outer.append_purple(f"{tracker}").print()
+    Outer.append_yellow(
+        f"Income sum: {tracker.calc_income()}, Expense sum: {tracker.calc_expense()}, total:{tracker.calc_balance()}"
+    ).print()
+    Outer.append_blue(f"{budget_line}").print()
+
+
+def add_transaction_entry(tracker: ExpenseTracker, transaction_type: str):
+    categories = tracker.get_categories(transaction_type)
+    transaction = input_transaction(transaction_type, categories)
+    if transaction is None:
+        return
+
+    tx_class = Income if transaction_type == "income" else Expense
+    try:
+        tracker.add_transaction(tx_class(transaction["amount"], transaction["category"]))
+    except ValueError as e:
+        log.error(f"Budget limit exceeded: {e}")
+        Outer.append_red(f"Error: {e}").print()
+        return
+
+    Outer.append_green(f"{transaction_type} added successfully! ").append_yellow(
+        f"{transaction}"
+    ).new_line().new_line().append_blue("See transaction list below").print()
+    show_all_transactions(tracker)
+
+
+def delete_transaction_entry(tracker: ExpenseTracker):
+    if not tracker.transactions:
         Outer.append_orange("No transactions to delete.").print()
-    else:
-        show_all_transactions()
+        return
 
-        idx = input_index_to_delete(Outer.append_blue("Enter index to delete (or 'q'): "), f"Invalid index. Please enter a number between 1 and {len(transactions.transactions)}.")
+    show_all_transactions(tracker)
 
-        if idx is not None:
-            if 0 < idx <= len(transactions.transactions):
-                removed = transactions.remove_transaction(idx)
-                Outer.append_orange(f"Transaction {removed} deleted.").print()
-                Outer.append_blue("See transaction list below").print()
-                show_all_transactions()
-                write_transactions(transactions.to_list())
-            else:
-                log.error(f"Index {idx} out of range (1-{len(transactions.transactions)}) for deletion")
-                Outer.append_red(f"Error: Index out of range 1-{len(transactions.transactions)}.").print()
+    idx = input_index_to_delete(
+        Outer.append_blue("Enter index to delete (or 'q'): "),
+        f"Invalid index. Please enter a number between 1 and {len(tracker.transactions)}.",
+    )
+
+    if idx is not None:
+        try:
+            removed = tracker.remove_transaction(idx)
+        except IndexError as e:
+            log.error(f"Index {idx} out of range (1-{len(tracker.transactions)}) for deletion")
+            Outer.append_red(f"Error: Index out of range 1-{len(tracker.transactions)}.").print()
+            return
+
+        Outer.append_orange(f"Transaction {removed.category} — {removed.amount} ({removed.type_name}) deleted.").print()
+        Outer.append_blue("See transaction list below").print()
+        show_all_transactions(tracker)
 
 
-#Main function to run the program
+def login() -> int | None:
+    """Prompts for email/password and authenticates against the users table
+    (populated e.g. by seed.py). Returns the user id on success, None if the
+    user cancels with 'q'."""
+    Outer.append_blue("=== Login ===").print()
+    while True:
+        email = input("Email (or 'q' to cancel): ").strip()
+        if email.lower() == "q":
+            return None
+
+        password = getpass.getpass("Password: ")
+        try:
+            user_id = authenticate_user(email, password)
+            username = get_username_by_email(email)
+        except sqlite3.Error as e:
+            log.error(f"Database error during login: {e}")
+            Outer.append_red(f"Database error, please try again later: {e}").print()
+            continue
+
+        if user_id is not None:
+            log.info(f"User '{username}' ({email}) logged in successfully")
+            return user_id
+
+        if username is not None:
+            log.error(f"Failed login attempt for user '{username}' ({email}): wrong password")
+        else:
+            log.error(f"Failed login attempt for unknown email {email}")
+        Outer.append_red("Invalid email or password. Try again.").print()
+
+
 def main():
     log.info("Program starts")
-    transactions.set_budget("Subscribes", 2000)
-    transactions.set_budget("food", 15000)
-    transactions.set_budget("medicine", 5000)
+    try:
+        init_db()
+    except sqlite3.Error as e:
+        log.error(f"Failed to initialize database: {e}")
+        Outer.append_red(f"Could not initialize the database: {e}").print()
+        return
+
+    user_id = login()
+    if user_id is None:
+        log.info("Login canceled, program ended")
+        Outer.append_orange("Login canceled. Exiting.").print()
+        return
+
+    try:
+        tracker = ExpenseTracker.from_db(user_id)
+    except sqlite3.Error as e:
+        log.error(f"Database error while loading tracker: {e}")
+        Outer.append_red(f"Database error, please try again later: {e}").print()
+        return
+
     while True:
         Outer.append_orange(f"Command list: {command_dict}").print()
         command = input(f"{Outer.append_blue('Input your command number: ')} ").strip()
 
-        if command == "5":
-            log.info("Program ended")
-            Outer.append_green("Thank you for using this program").print()
-            break
-        elif command == "1":
-            add_transaction("income")
-        elif command == "2":
-            add_transaction("expense")
-        elif command == "3":
-            show_all_transactions_with_info()
-        elif command == "4":
-            delete_transaction()
-        else:
-            log.error(f"Command with number {command} not exists")
-            Outer.append_red("Unknown command. Please try again.").print()
+        try:
+            if command == "5":
+                log.info("Program ended")
+                Outer.append_green("Thank you for using this program").print()
+                break
+            elif command == "1":
+                add_transaction_entry(tracker, "income")
+            elif command == "2":
+                add_transaction_entry(tracker, "expense")
+            elif command == "3":
+                show_all_transactions_with_info(tracker)
+            elif command == "4":
+                delete_transaction_entry(tracker)
+            else:
+                log.error(f"Command with number {command} not exists")
+                Outer.append_red("Unknown command. Please try again.").print()
+        except sqlite3.Error as e:
+            log.error(f"Database error while processing command '{command}': {e}")
+            Outer.append_red(f"Database error, please try again later: {e}").print()
 
-#execution of the program
-command_dict={1:"input income", 2:"input expense",3:"show all transactions",4:"delete transaction",5:"exit"}
-transactions=None
+
 if __name__ == "__main__":
-    transactions = ExpenseTracker.from_data(read_transactions())
     main()
