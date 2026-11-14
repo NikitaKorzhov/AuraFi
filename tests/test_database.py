@@ -97,8 +97,8 @@ class TestGetConnection:
                 conn.execute(
                     """
                     INSERT INTO transactions
-                        (amount, transaction_type, category, date, description, user_id)
-                    VALUES (10, 'expense', 'food', '2026-01-01', '', 9999)
+                        (amount, transaction_type, category_uuid, date, description, user_id)
+                    VALUES (10, 'expense', 'nonexistent-category-uuid', '2026-01-01', '', 9999)
                     """
                 )
         finally:

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from decorators import validate_amount
+
 
 def to_kopecks(amount: float | int) -> int:
     """Converts a hryvnia amount (float|int) into kopecks (int) for storage/calculation."""
@@ -18,6 +20,7 @@ class Transaction:
     amount as a plain hryvnia float — kopecks only exist on this side of the
     boundary, converted on the way in/out."""
 
+    @validate_amount
     def __init__(self, amount: float | int, category: str, *, id: int | None = None,
                  date: str | None = None, description: str = ""):
         self.id = id

@@ -1,4 +1,5 @@
 import sqlite3
+import uuid
 
 import pytest
 
@@ -6,15 +7,31 @@ import models
 
 
 def _raw_insert_transaction(db_path, user_id, amount, transaction_type, category, date):
-    """Bypasses models.add_transaction's category normalization, to simulate
-    legacy/mixed-case rows already sitting in the database."""
+    """Bypasses models.add_transaction's category normalization, to simulate a
+    legacy/mixed-case category value: creates (or reuses, exact-case) a
+    `categories` row with `category` exactly as given, then a transaction
+    pointing at it — rather than going through _find_or_create_category's
+    case-insensitive lookup. `categories` is a shared catalog (no user_id),
+    so the lookup/insert here is global, same as the app's own code."""
     conn = sqlite3.connect(db_path)
+    row = conn.execute(
+        "SELECT uuid FROM categories WHERE transaction_type = ? AND name = ?",
+        (transaction_type, category),
+    ).fetchone()
+    if row:
+        category_uuid = row[0]
+    else:
+        category_uuid = str(uuid.uuid4())
+        conn.execute(
+            "INSERT INTO categories (uuid, name, transaction_type) VALUES (?, ?, ?)",
+            (category_uuid, category, transaction_type),
+        )
     conn.execute(
         """
-        INSERT INTO transactions (amount, transaction_type, category, date, description, user_id)
+        INSERT INTO transactions (amount, transaction_type, category_uuid, date, description, user_id)
         VALUES (?, ?, ?, ?, '', ?)
         """,
-        (amount, transaction_type, category, date, user_id),
+        (amount, transaction_type, category_uuid, date, user_id),
     )
     conn.commit()
     conn.close()
@@ -92,7 +109,11 @@ class TestAddTransaction:
         tx_id = models.add_transaction(user_id, 10, "expense", "  FOOD  ", "")
         conn = sqlite3.connect(temp_db)
         stored = conn.execute(
-            "SELECT category FROM transactions WHERE id = ?", (tx_id,)
+            """
+            SELECT c.name FROM transactions t JOIN categories c ON c.uuid = t.category_uuid
+            WHERE t.id = ?
+            """,
+            (tx_id,),
         ).fetchone()[0]
         conn.close()
         assert stored == "food"
@@ -207,7 +228,7 @@ class TestSetBudget:
     def test_creates_a_new_budget_and_returns_its_id(self, temp_db):
         user_id = models.create_user("alice", "alice@example.com", "pw", seed_default_categories=False)
         budget_id = models.set_budget(user_id, "food", "expense", 1000)
-        assert isinstance(budget_id, int)
+        assert isinstance(budget_id, str)
 
     def test_second_call_updates_limit_instead_of_duplicating(self, temp_db):
         user_id = models.create_user("alice", "alice@example.com", "pw", seed_default_categories=False)
@@ -231,7 +252,12 @@ class TestSetBudget:
 
         conn = sqlite3.connect(temp_db)
         rows = conn.execute(
-            "SELECT category, monthly_limit FROM budgets WHERE user_id = ?", (user_id,)
+            """
+            SELECT c.name, b.limit_amount
+            FROM budgets b JOIN categories c ON c.uuid = b.category_uuid
+            WHERE b.user_id = ?
+            """,
+            (user_id,),
         ).fetchall()
         conn.close()
         assert rows == [("food", 2000)]
@@ -267,13 +293,18 @@ class TestGetCategories:
         assert models.get_categories(user_id, "expense") == {}
         assert models.get_categories(user_id, "income") == {}
 
-    def test_only_returns_the_given_users_categories(self, temp_db):
+    def test_categories_are_shared_but_limits_are_personal(self, temp_db):
+        """`categories` is a shared catalog, not owned by any one user — both
+        users see every category that exists. Only the *limit* (the `budgets`
+        row) is personal: each user sees their own limit for a category they've
+        budgeted, and None for one only the other user has."""
         user_a = models.create_user("alice", "alice@example.com", "pw", seed_default_categories=False)
         user_b = models.create_user("bob", "bob@example.com", "pw", seed_default_categories=False)
         models.set_budget(user_a, "food", "expense", 1000)
         models.set_budget(user_b, "rent", "expense", 2000)
 
-        assert models.get_categories(user_a, "expense") == {"food": 1000}
+        assert models.get_categories(user_a, "expense") == {"food": 1000, "rent": None}
+        assert models.get_categories(user_b, "expense") == {"food": None, "rent": 2000}
 
 
 # ---------------------------------------------------------------------------

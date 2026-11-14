@@ -4,13 +4,15 @@ import hashlib
 import hmac
 import os
 import sqlite3
+import uuid as uuid_lib
 from datetime import date as date_cls
 
 from database import db_connection
 
-# Starter categories (hryvnia monthly budgets) seeded once into the `budgets`
-# table when a user is created — the database is the only source read from
-# after that point (via get_categories()), not these dicts.
+# Starter categories (hryvnia monthly budgets) seeded once into `categories`
+# (+ a matching `budgets` row per category) when a user is created — the
+# database is the only source read from after that point (via
+# get_categories()), not these dicts.
 DEFAULT_EXPENSE_CATEGORIES = {
     "food": 15000,
     "rent": 10000,
@@ -21,13 +23,34 @@ DEFAULT_EXPENSE_CATEGORIES = {
     "other": 5000,
 }
 
-# Income has no budget concept, so there's no limit to seed — None means
-# "no monthly limit" (see init.sql: budgets.monthly_limit is nullable).
+# Income has no budget concept, so these get a `categories` row only — no
+# matching `budgets` row, which is what makes get_categories() report their
+# limit as None (see get_categories()'s LEFT JOIN).
 DEFAULT_INCOME_CATEGORIES = ["salary", "freelance", "gift", "other"]
 
 
 def _rows_to_dicts(rows: list[sqlite3.Row]) -> list[dict]:
     return [dict(row) for row in rows]
+
+
+def _find_or_create_category(conn: sqlite3.Connection, name: str, transaction_type: str) -> str:
+    """Finds the existing category row (matched case-insensitively) or creates
+    one, and returns its uuid. `categories` is a shared catalog — not scoped to
+    any one user — so this lookup is global. Does not commit — caller owns the
+    transaction."""
+    row = conn.execute(
+        "SELECT uuid FROM categories WHERE transaction_type = ? AND LOWER(name) = ?",
+        (transaction_type, name),
+    ).fetchone()
+    if row:
+        return row[0]
+
+    category_uuid = str(uuid_lib.uuid4())
+    conn.execute(
+        "INSERT INTO categories (uuid, name, transaction_type) VALUES (?, ?, ?)",
+        (category_uuid, name, transaction_type),
+    )
+    return category_uuid
 
 
 def _hash_password(password: str, salt: bytes | None = None) -> str:
@@ -48,11 +71,13 @@ def create_user(username: str, email: str, password: str, seed_default_categorie
     """Inserts a new user (password is hashed before storage) and returns its id.
 
     By default also seeds the starter category list (DEFAULT_EXPENSE_CATEGORIES /
-    DEFAULT_INCOME_CATEGORIES) into `budgets`, once, atomically with user
-    creation — so the category-selection menu always has something to show
-    without main.py re-syncing a Python constant into the database on every
-    startup. Pass seed_default_categories=False for a blank-slate user (e.g.
-    in tests that set up their own categories)."""
+    DEFAULT_INCOME_CATEGORIES) into the shared `categories` catalog — reusing
+    any of those categories that already exist (seeded by an earlier user) —
+    plus a `budgets` row of this user's own for each expense category, so the
+    category-selection menu always has something to show without main.py
+    re-syncing a Python constant into the database on every startup. Pass
+    seed_default_categories=False for a blank-slate user (e.g. in tests that
+    set up their own categories)."""
     with db_connection() as conn:
         cur = conn.execute(
             "INSERT INTO users (username, email, password_hash) VALUES (?, ?, ?)",
@@ -62,17 +87,14 @@ def create_user(username: str, email: str, password: str, seed_default_categorie
 
         if seed_default_categories:
             for category, limit in DEFAULT_EXPENSE_CATEGORIES.items():
+                category_uuid = _find_or_create_category(conn, category, "expense")
                 conn.execute(
-                    "INSERT INTO budgets (category, transaction_type, monthly_limit, user_id) "
-                    "VALUES (?, 'expense', ?, ?)",
-                    (category, limit, user_id),
+                    "INSERT INTO budgets (uuid, period_type, limit_amount, user_id, category_uuid) "
+                    "VALUES (?, 'monthly', ?, ?, ?)",
+                    (str(uuid_lib.uuid4()), limit, user_id, category_uuid),
                 )
             for category in DEFAULT_INCOME_CATEGORIES:
-                conn.execute(
-                    "INSERT INTO budgets (category, transaction_type, monthly_limit, user_id) "
-                    "VALUES (?, 'income', NULL, ?)",
-                    (category, user_id),
-                )
+                _find_or_create_category(conn, category, "income")
 
         conn.commit()
         return user_id
@@ -112,7 +134,10 @@ def add_transaction(
     description: str,
     date: str | None = None,
 ) -> int:
-    """Inserts a new transaction for `user_id` and returns its id.
+    """Inserts a new transaction for `user_id` and returns its id. `category` is
+    a plain category name (not a uuid) — resolved to (or, if new, created as) a
+    `categories` row, and it's that row's uuid that actually gets stored on the
+    transaction (see `transactions.category_uuid`), never the name itself.
 
     `date` defaults to today (ISO format) and only needs to be passed explicitly
     when backdating a transaction, e.g. when seeding demo data.
@@ -124,27 +149,31 @@ def add_transaction(
     date = date or date_cls.today().isoformat()
 
     with db_connection() as conn:
+        category_uuid = _find_or_create_category(conn, category, transaction_type)
         cur = conn.execute(
             """
-            INSERT INTO transactions (amount, transaction_type, category, date, description, user_id)
+            INSERT INTO transactions (amount, transaction_type, category_uuid, date, description, user_id)
             VALUES (?, ?, ?, ?, ?, ?)
             """,
-            (amount, transaction_type, category, date, description, user_id),
+            (amount, transaction_type, category_uuid, date, description, user_id),
         )
         conn.commit()
         return cur.lastrowid
 
 
 def get_all_transactions(user_id: int) -> list[dict]:
-    """Returns every transaction belonging to `user_id`, oldest first."""
+    """Returns every transaction belonging to `user_id`, oldest first. `category`
+    in each row is the category's name, resolved via `category_uuid` — callers
+    never see the uuid, only the name (same shape as before this was a FK)."""
     with db_connection() as conn:
         conn.row_factory = sqlite3.Row
         rows = conn.execute(
             """
-            SELECT id, amount, transaction_type, category, date, description, user_id
-            FROM transactions
-            WHERE user_id = ?
-            ORDER BY date, id
+            SELECT t.id, t.amount, t.transaction_type, c.name AS category, t.date, t.description, t.user_id
+            FROM transactions t
+            JOIN categories c ON c.uuid = t.category_uuid
+            WHERE t.user_id = ?
+            ORDER BY t.date, t.id
             """,
             (user_id,),
         ).fetchall()
@@ -168,17 +197,19 @@ def get_balance(user_id: int) -> float:
 def get_expenses_by_category(user_id: int) -> list[dict]:
     """Returns total expenses per category for `user_id`, highest spend first.
 
-    Grouped by LOWER(category) so 'Food' and 'food' are treated as the same
-    category (defensive against any mixed-case rows written before categories
-    were normalized at insert time)."""
+    Grouped by LOWER(category name) so 'Food' and 'food' are treated as the
+    same category, even if they ended up as two different `categories` rows
+    (defensive against any mixed-case category data, e.g. written directly
+    rather than through add_transaction's normalization)."""
     with db_connection() as conn:
         conn.row_factory = sqlite3.Row
         rows = conn.execute(
             """
-            SELECT LOWER(category) AS category, SUM(amount) AS total
-            FROM transactions
-            WHERE user_id = ? AND transaction_type = 'expense'
-            GROUP BY LOWER(category)
+            SELECT LOWER(c.name) AS category, SUM(t.amount) AS total
+            FROM transactions t
+            JOIN categories c ON c.uuid = t.category_uuid
+            WHERE t.user_id = ? AND t.transaction_type = 'expense'
+            GROUP BY LOWER(c.name)
             ORDER BY total DESC
             """,
             (user_id,),
@@ -186,10 +217,11 @@ def get_expenses_by_category(user_id: int) -> list[dict]:
         return _rows_to_dicts(rows)
 
 
-def set_budget(user_id: int, category: str, transaction_type: str, monthly_limit: float | None = None) -> int:
-    """Creates or updates (if one already exists for this user+category+type) the
-    category/monthly-limit row, and returns its id. `monthly_limit=None` means
-    no limit (the only sensible value for an income category).
+def set_budget(user_id: int, category: str, transaction_type: str, monthly_limit: float | None = None) -> str:
+    """Creates or updates (if one already exists for this user+category) the
+    category's budget row, and returns its uuid. `monthly_limit=None` means no
+    limit; for an income category (which has no budget concept) no `budgets`
+    row is created at all — only the category itself is ensured to exist.
 
     `category` is normalized to lowercase so budgets are matched case-insensitively
     against transaction categories (see add_transaction)."""
@@ -198,38 +230,56 @@ def set_budget(user_id: int, category: str, transaction_type: str, monthly_limit
 
     category = category.strip().lower()
     with db_connection() as conn:
+        category_uuid = _find_or_create_category(conn, category, transaction_type)
+
+        if transaction_type == "income":
+            conn.commit()
+            return category_uuid
+
         existing = conn.execute(
-            "SELECT id FROM budgets WHERE user_id = ? AND transaction_type = ? AND LOWER(category) = ?",
-            (user_id, transaction_type, category),
+            "SELECT uuid FROM budgets WHERE user_id = ? AND category_uuid = ?",
+            (user_id, category_uuid),
         ).fetchone()
 
         if existing:
             conn.execute(
-                "UPDATE budgets SET monthly_limit = ? WHERE id = ?",
+                "UPDATE budgets SET limit_amount = ? WHERE uuid = ?",
                 (monthly_limit, existing[0]),
             )
-            budget_id = existing[0]
+            budget_uuid = existing[0]
         else:
-            cur = conn.execute(
-                "INSERT INTO budgets (category, transaction_type, monthly_limit, user_id) VALUES (?, ?, ?, ?)",
-                (category, transaction_type, monthly_limit, user_id),
+            budget_uuid = str(uuid_lib.uuid4())
+            conn.execute(
+                "INSERT INTO budgets (uuid, period_type, limit_amount, user_id, category_uuid) "
+                "VALUES (?, 'monthly', ?, ?, ?)",
+                (budget_uuid, monthly_limit, user_id, category_uuid),
             )
-            budget_id = cur.lastrowid
 
         conn.commit()
-        return budget_id
+        return budget_uuid
 
 
 def get_categories(user_id: int, transaction_type: str) -> dict:
     """Returns {category: monthly_limit} for every category of `transaction_type`
-    the user has — this is what the category-selection menu is built from (the
-    database is the only source; there is no parallel Python category list)."""
+    that exists — this is what the category-selection menu is built from (the
+    database is the only source; there is no parallel Python category list).
+    `categories` is a shared catalog (not scoped to any one user), so this
+    lists the full catalog for that type; only the *limit* is personal,
+    sourced from `user_id`'s own `budgets` row for that category (left join,
+    so it comes back as None if they don't have one — always the case for
+    income, which has no budget concept)."""
     with db_connection() as conn:
         rows = conn.execute(
-            "SELECT category, monthly_limit FROM budgets WHERE user_id = ? AND transaction_type = ? ORDER BY category",
+            """
+            SELECT c.name, b.limit_amount
+            FROM categories c
+            LEFT JOIN budgets b ON b.category_uuid = c.uuid AND b.user_id = ?
+            WHERE c.transaction_type = ?
+            ORDER BY c.name
+            """,
             (user_id, transaction_type),
         ).fetchall()
-    return {category: limit for category, limit in rows}
+    return {name: limit for name, limit in rows}
 
 
 def get_budget_limits(user_id: int) -> list[dict]:
@@ -238,24 +288,30 @@ def get_budget_limits(user_id: int) -> list[dict]:
     month) — used to display budget status and to enforce limits when adding an
     expense.
 
-    Categories are compared case-insensitively (LOWER(...) on both sides of the
-    JOIN), so a budget on 'Food' still matches a 'food' expense."""
+    Categories are compared case-insensitively: a transaction's category name
+    (resolved via its own `category_uuid`) is matched against the budget's
+    category name with LOWER(...) on both sides, so a budget on 'Food' still
+    matches a 'food' expense even if those ended up as two different
+    `categories` rows."""
     with db_connection() as conn:
         conn.row_factory = sqlite3.Row
         rows = conn.execute(
             """
             SELECT
-                LOWER(b.category) AS category,
-                b.monthly_limit AS monthly_limit,
-                COALESCE(SUM(t.amount), 0) AS spent
+                LOWER(c.name) AS category,
+                b.limit_amount AS monthly_limit,
+                (
+                    SELECT COALESCE(SUM(t.amount), 0)
+                    FROM transactions t
+                    JOIN categories tc ON tc.uuid = t.category_uuid
+                    WHERE t.user_id = b.user_id
+                        AND t.transaction_type = 'expense'
+                        AND LOWER(tc.name) = LOWER(c.name)
+                ) AS spent
             FROM budgets b
-            LEFT JOIN transactions t
-                ON LOWER(t.category) = LOWER(b.category)
-                AND t.user_id = b.user_id
-                AND t.transaction_type = 'expense'
-            WHERE b.user_id = ? AND b.transaction_type = 'expense'
-            GROUP BY LOWER(b.category)
-            ORDER BY LOWER(b.category)
+            JOIN categories c ON c.uuid = b.category_uuid
+            WHERE b.user_id = ? AND c.transaction_type = 'expense'
+            ORDER BY LOWER(c.name)
             """,
             (user_id,),
         ).fetchall()
@@ -282,18 +338,21 @@ def check_budget_status(user_id: int) -> list[dict]:
         rows = conn.execute(
             """
             SELECT
-                LOWER(b.category) AS category,
-                b.monthly_limit AS monthly_limit,
-                COALESCE(SUM(t.amount), 0) AS spent
+                LOWER(c.name) AS category,
+                b.limit_amount AS monthly_limit,
+                (
+                    SELECT COALESCE(SUM(t.amount), 0)
+                    FROM transactions t
+                    JOIN categories tc ON tc.uuid = t.category_uuid
+                    WHERE t.user_id = b.user_id
+                        AND t.transaction_type = 'expense'
+                        AND LOWER(tc.name) = LOWER(c.name)
+                        AND strftime('%Y-%m', t.date) = ?
+                ) AS spent
             FROM budgets b
-            LEFT JOIN transactions t
-                ON LOWER(t.category) = LOWER(b.category)
-                AND t.user_id = b.user_id
-                AND t.transaction_type = 'expense'
-                AND strftime('%Y-%m', t.date) = ?
-            WHERE b.user_id = ? AND b.transaction_type = 'expense'
-            GROUP BY LOWER(b.category)
-            ORDER BY LOWER(b.category)
+            JOIN categories c ON c.uuid = b.category_uuid
+            WHERE b.user_id = ? AND c.transaction_type = 'expense'
+            ORDER BY LOWER(c.name)
             """,
             (month_prefix, user_id),
         ).fetchall()

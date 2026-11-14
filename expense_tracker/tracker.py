@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import models as db
+from decorators import currency_aware, log_transaction
 from expense_tracker.models import Budget, Expense, Income, Transaction, to_display
 
 
@@ -42,6 +43,8 @@ class ExpenseTracker:
             if isinstance(t, Expense) and t.category.lower() == category
         ]
 
+    @log_transaction
+    @currency_aware()
     def add_transaction(self, transaction: Transaction):
         if not isinstance(transaction, Transaction):
             raise TypeError("Transaction must be of type Transaction.")
@@ -59,6 +62,7 @@ class ExpenseTracker:
         )
         self.transactions.append(transaction)
 
+    @log_transaction
     def remove_transaction(self, index: int):
         """Removes a transaction by its number (index).
 
@@ -100,22 +104,29 @@ class ExpenseTracker:
 class BudgetManager:
     """Owns the user's category list (both expense budgets and income
     categories). `set_budget` is the one state-change entry point — it updates
-    the in-memory dict and persists the same change via `db.set_budget`."""
+    the in-memory dict and persists the same change via `db.set_budget`.
+
+    Keyed by (category, transaction_type), not category alone — an income and
+    an expense category can share the same name (e.g. both default category
+    lists include "other"), and a plain string key would let one overwrite
+    the other in this dict even though the database keeps them as distinct
+    rows (see `categories`/`budgets` in init.sql)."""
 
     def __init__(self, user_id: int):
         self.user_id = user_id
-        self.budgets: dict[str, Budget] = {}
+        self.budgets: dict[tuple[str, str], Budget] = {}
 
     def load(self):
         """Loads the full category list (both transaction types) from the database."""
         self.budgets = {}
         for transaction_type in ("expense", "income"):
             for category, limit in db.get_categories(self.user_id, transaction_type).items():
-                self.budgets[category] = Budget(category, transaction_type, limit)
+                self.budgets[(category, transaction_type)] = Budget(category, transaction_type, limit)
 
+    @log_transaction
     def set_budget(self, category: str, transaction_type: str, monthly_limit: float | None = None):
         category = category.lower()
-        self.budgets[category] = Budget(category, transaction_type, monthly_limit)
+        self.budgets[(category, transaction_type)] = Budget(category, transaction_type, monthly_limit)
         db.set_budget(self.user_id, category, transaction_type, monthly_limit)
 
     def get_categories(self, transaction_type: str) -> dict:
@@ -129,8 +140,8 @@ class BudgetManager:
 
     def validate_expense(self, transaction: Expense, current_transactions: list[Transaction]):
         category = transaction.category.lower()
-        if category in self.budgets:
-            budget = self.budgets[category]
+        budget = self.budgets.get((category, "expense"))
+        if budget is not None:
             all_transactions = current_transactions + [transaction]
             is_exceeded, total_spent = budget.check_limit(all_transactions)
             if is_exceeded:
@@ -142,14 +153,14 @@ class BudgetManager:
     def get_limits_data(self, current_transactions: list[Transaction]):
         return [
             (
-                category,
+                budget.category,
                 to_display(sum(
                     t.amount_kopecks
                     for t in current_transactions
-                    if isinstance(t, Expense) and t.category.lower() == category
+                    if isinstance(t, Expense) and t.category.lower() == budget.category
                 )),
                 budget.monthly_limit,
             )
-            for category, budget in self.budgets.items()
+            for budget in self.budgets.values()
             if budget.transaction_type == "expense"
         ]
