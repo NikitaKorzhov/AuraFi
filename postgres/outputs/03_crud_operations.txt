@@ -1,0 +1,24 @@
+=== CRUD OPERATIONS ===
+
+CREATE — adding users:
+Users created: id 1, 2
+
+READ — fetching one user:
+ivan_petrov: ivan@example.com
+
+READ ALL — fetching every user:
+  - ivan_petrov (ivan@example.com)
+  - maria_sidorenko (maria@example.com)
+
+UPDATE — changing an email:
+updated: True
+
+CREATE a transaction tied to that user (needs a category first):
+transaction created: id 1
+  - [1] 2026-11-15 expense 42.50
+
+DELETE — removing a user:
+deleted: True
+
+Final user list:
+  - ivan_petrov (newemail@example.com)

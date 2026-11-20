@@ -1,0 +1,17 @@
+=== JOIN QUERIES ===
+
+1) Seeding test data:
+Data inserted
+
+2) INNER JOIN — users with their transactions and category names:
+  join_alice: 100.00 [Food]
+  join_alice: 50.00 [Transport]
+  join_bob: 30.00 [Food]
+
+3) LEFT JOIN — every user, even those with zero transactions:
+  join_alice: 2 transactions
+  join_bob: 1 transactions
+
+4) Aggregation — total spend per user:
+  join_alice: total spent 150.00
+  join_bob: total spent 30.00

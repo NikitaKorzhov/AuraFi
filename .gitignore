@@ -2,7 +2,7 @@
 .idea/
 aura_venv/
 venv/
-transactions.json
+aurafi.db
 log.txt
 # Byte-compiled / optimized / DLL files
 __pycache__/
