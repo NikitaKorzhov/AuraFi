@@ -1,6 +1,20 @@
 from __future__ import annotations
 
-from money import to_kopecks, to_display
+
+def to_kopecks(amount: float | int) -> int:
+    """Converts a hryvnia amount (float|int) into kopecks (int) for storage/calculation."""
+    return round(amount * 100)
+
+
+def to_display(kopecks: int) -> float | int:
+    """Converts kopecks (int) back into a hryvnia amount (int if whole, float otherwise)."""
+    value = kopecks / 100
+    whole = int(value)
+    return whole if value == whole else round(value, 2)
+
+
+
+
 
 
 class Transaction:
@@ -9,6 +23,8 @@ class Transaction:
         self.amount_kopecks = to_kopecks(amount)
         self.category = category
 
+
+   
     @property
     def amount(self) -> float | int:
         return to_display(self.amount_kopecks)
@@ -76,3 +92,21 @@ class Expense(Transaction):
     @property
     def signed_amount(self) -> int:
         return -self.amount_kopecks  # Expense is always negative (kopecks)
+
+
+class Budget:
+    def __init__(self, category, monthly_limit: float | int):
+        self.category = category
+        self.monthly_limit_kopecks = to_kopecks(monthly_limit)
+
+    @property
+    def monthly_limit(self) -> float | int:
+        return to_display(self.monthly_limit_kopecks)
+
+    def check_limit(self, transactions: list) -> tuple[bool, float | int]:
+        total_spent_kopecks = sum(
+            tx.amount_kopecks
+            for tx in transactions
+            if isinstance(tx, Expense) and tx.category.lower() == self.category
+        )
+        return total_spent_kopecks > self.monthly_limit_kopecks, to_display(total_spent_kopecks)
