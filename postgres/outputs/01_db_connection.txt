@@ -1,0 +1,7 @@
+Connected to PostgreSQL successfully!
+
+PostgreSQL version:
+PostgreSQL 18.7 (Postgres.app) on aarch64-apple-darwin23.6.0, compiled by Apple clang version 15.0.0 (clang-1500.3.9.4), 64-bit
+
+User: pk
+Current db: postgres

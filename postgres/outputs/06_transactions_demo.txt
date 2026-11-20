@@ -1,0 +1,18 @@
+=== TRANSACTIONS ===
+
+1) Successful transaction (two inserts, one COMMIT):
+  step 1: user added
+  step 2: transaction added
+  step 3: COMMIT — both operations saved
+
+2) Failing transaction (duplicate email -> ROLLBACK):
+  step 1: user 'david' added
+  uniqueness error: duplicate key value violates unique constraint "users_email_key"
+  ROLLBACK — both operations undone
+
+3) Checking the result:
+  Users in the db:
+    - charlie: charlie@example.com
+
+  charlie was added successfully
+  david and eve were NOT added (ROLLBACK took effect)

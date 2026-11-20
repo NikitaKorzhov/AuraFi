@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import getpass
-import sqlite3
+
+import psycopg
 
 from database import init_db
 from expense_tracker import ExpenseTracker, Income, Expense
@@ -99,7 +100,7 @@ def login() -> int | None:
         try:
             user_id = authenticate_user(email, password)
             username = get_username_by_email(email)
-        except sqlite3.Error as e:
+        except psycopg.Error as e:
             log.error(f"Database error during login: {e}")
             Outer.append_red(f"Database error, please try again later: {e}").print()
             continue
@@ -119,7 +120,7 @@ def main():
     log.info("Program starts")
     try:
         init_db()
-    except sqlite3.Error as e:
+    except psycopg.Error as e:
         log.error(f"Failed to initialize database: {e}")
         Outer.append_red(f"Could not initialize the database: {e}").print()
         return
@@ -132,7 +133,7 @@ def main():
 
     try:
         tracker = ExpenseTracker.from_db(user_id)
-    except sqlite3.Error as e:
+    except psycopg.Error as e:
         log.error(f"Database error while loading tracker: {e}")
         Outer.append_red(f"Database error, please try again later: {e}").print()
         return
@@ -157,7 +158,7 @@ def main():
             else:
                 log.error(f"Command with number {command} not exists")
                 Outer.append_red("Unknown command. Please try again.").print()
-        except sqlite3.Error as e:
+        except psycopg.Error as e:
             log.error(f"Database error while processing command '{command}': {e}")
             Outer.append_red(f"Database error, please try again later: {e}").print()
 

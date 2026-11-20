@@ -1,5 +1,12 @@
+-- PostgreSQL DDL (migrated from the earlier SQLite schema as part of
+-- Homework 30). Same four tables, same columns, same constraints, same
+-- relationships — only the engine-specific autoincrement syntax changed
+-- (INTEGER PRIMARY KEY AUTOINCREMENT -> SERIAL PRIMARY KEY). Postgres
+-- enforces FOREIGN KEY constraints unconditionally, so there is no
+-- PRAGMA-style per-connection switch to set (see database.get_connection()).
+
 CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     username TEXT NOT NULL,
     email TEXT NOT NULL UNIQUE,
     password_hash TEXT NOT NULL
@@ -16,7 +23,7 @@ CREATE TABLE IF NOT EXISTS categories (
 );
 
 CREATE TABLE IF NOT EXISTS transactions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     amount REAL NOT NULL,
     transaction_type TEXT NOT NULL CHECK (transaction_type IN ('income', 'expense')),
     category_uuid TEXT NOT NULL,

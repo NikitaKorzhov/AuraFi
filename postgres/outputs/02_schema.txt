@@ -1,0 +1,3 @@
+Database 'aurafi' already exists
+Tables users, categories, transactions, budgets created
+Tables in db: budgets, categories, transactions, users

@@ -1,40 +1,40 @@
-import sqlite3
 import uuid
 
+import psycopg
 import pytest
 
+import database
 import models
 
 
-def _raw_insert_transaction(db_path, user_id, amount, transaction_type, category, date):
+def _raw_insert_transaction(dbname, user_id, amount, transaction_type, category, date):
     """Bypasses models.add_transaction's category normalization, to simulate a
     legacy/mixed-case category value: creates (or reuses, exact-case) a
     `categories` row with `category` exactly as given, then a transaction
     pointing at it — rather than going through _find_or_create_category's
     case-insensitive lookup. `categories` is a shared catalog (no user_id),
     so the lookup/insert here is global, same as the app's own code."""
-    conn = sqlite3.connect(db_path)
-    row = conn.execute(
-        "SELECT uuid FROM categories WHERE transaction_type = ? AND name = ?",
-        (transaction_type, category),
-    ).fetchone()
-    if row:
-        category_uuid = row[0]
-    else:
-        category_uuid = str(uuid.uuid4())
+    with psycopg.connect(database.dsn(dbname)) as conn:
+        row = conn.execute(
+            "SELECT uuid FROM categories WHERE transaction_type = %s AND name = %s",
+            (transaction_type, category),
+        ).fetchone()
+        if row:
+            category_uuid = row[0]
+        else:
+            category_uuid = str(uuid.uuid4())
+            conn.execute(
+                "INSERT INTO categories (uuid, name, transaction_type) VALUES (%s, %s, %s)",
+                (category_uuid, category, transaction_type),
+            )
         conn.execute(
-            "INSERT INTO categories (uuid, name, transaction_type) VALUES (?, ?, ?)",
-            (category_uuid, category, transaction_type),
+            """
+            INSERT INTO transactions (amount, transaction_type, category_uuid, date, description, user_id)
+            VALUES (%s, %s, %s, %s, '', %s)
+            """,
+            (amount, transaction_type, category_uuid, date, user_id),
         )
-    conn.execute(
-        """
-        INSERT INTO transactions (amount, transaction_type, category_uuid, date, description, user_id)
-        VALUES (?, ?, ?, ?, '', ?)
-        """,
-        (amount, transaction_type, category_uuid, date, user_id),
-    )
-    conn.commit()
-    conn.close()
+        conn.commit()
 
 
 # ---------------------------------------------------------------------------
@@ -49,16 +49,15 @@ class TestCreateUser:
     def test_duplicate_email_is_rejected(self, temp_db):
         """The `users.email` UNIQUE constraint must actually be enforced."""
         models.create_user("alice", "alice@example.com", "pw")
-        with pytest.raises(sqlite3.IntegrityError):
+        with pytest.raises(psycopg.errors.UniqueViolation):
             models.create_user("alice2", "alice@example.com", "other_pw")
 
     def test_password_is_not_stored_in_plaintext(self, temp_db):
         models.create_user("alice", "alice@example.com", "supersecret")
-        conn = sqlite3.connect(temp_db)
-        stored = conn.execute(
-            "SELECT password_hash FROM users WHERE email = 'alice@example.com'"
-        ).fetchone()[0]
-        conn.close()
+        with psycopg.connect(database.dsn(temp_db)) as conn:
+            stored = conn.execute(
+                "SELECT password_hash FROM users WHERE email = 'alice@example.com'"
+            ).fetchone()[0]
         assert "supersecret" not in stored
 
 
@@ -107,15 +106,14 @@ class TestAddTransaction:
     def test_category_is_normalized_to_lowercase_and_stripped(self, temp_db):
         user_id = models.create_user("alice", "alice@example.com", "pw")
         tx_id = models.add_transaction(user_id, 10, "expense", "  FOOD  ", "")
-        conn = sqlite3.connect(temp_db)
-        stored = conn.execute(
-            """
-            SELECT c.name FROM transactions t JOIN categories c ON c.uuid = t.category_uuid
-            WHERE t.id = ?
-            """,
-            (tx_id,),
-        ).fetchone()[0]
-        conn.close()
+        with psycopg.connect(database.dsn(temp_db)) as conn:
+            stored = conn.execute(
+                """
+                SELECT c.name FROM transactions t JOIN categories c ON c.uuid = t.category_uuid
+                WHERE t.id = %s
+                """,
+                (tx_id,),
+            ).fetchone()[0]
         assert stored == "food"
 
     def test_date_defaults_to_today_when_not_given(self, temp_db):
@@ -123,21 +121,19 @@ class TestAddTransaction:
 
         user_id = models.create_user("alice", "alice@example.com", "pw")
         tx_id = models.add_transaction(user_id, 10, "expense", "food", "")
-        conn = sqlite3.connect(temp_db)
-        stored = conn.execute(
-            "SELECT date FROM transactions WHERE id = ?", (tx_id,)
-        ).fetchone()[0]
-        conn.close()
+        with psycopg.connect(database.dsn(temp_db)) as conn:
+            stored = conn.execute(
+                "SELECT date FROM transactions WHERE id = %s", (tx_id,)
+            ).fetchone()[0]
         assert stored == date.today().isoformat()
 
     def test_explicit_date_is_preserved(self, temp_db):
         user_id = models.create_user("alice", "alice@example.com", "pw")
         tx_id = models.add_transaction(user_id, 10, "expense", "food", "", date="2020-01-01")
-        conn = sqlite3.connect(temp_db)
-        stored = conn.execute(
-            "SELECT date FROM transactions WHERE id = ?", (tx_id,)
-        ).fetchone()[0]
-        conn.close()
+        with psycopg.connect(database.dsn(temp_db)) as conn:
+            stored = conn.execute(
+                "SELECT date FROM transactions WHERE id = %s", (tx_id,)
+            ).fetchone()[0]
         assert stored == "2020-01-01"
 
 
@@ -236,11 +232,10 @@ class TestSetBudget:
         second_id = models.set_budget(user_id, "food", "expense", 2000)
         assert first_id == second_id
 
-        conn = sqlite3.connect(temp_db)
-        count = conn.execute(
-            "SELECT COUNT(*) FROM budgets WHERE user_id = ?", (user_id,)
-        ).fetchone()[0]
-        conn.close()
+        with psycopg.connect(database.dsn(temp_db)) as conn:
+            count = conn.execute(
+                "SELECT COUNT(*) FROM budgets WHERE user_id = %s", (user_id,)
+            ).fetchone()[0]
         assert count == 1
 
     def test_different_case_matches_the_same_existing_budget(self, temp_db):
@@ -250,16 +245,15 @@ class TestSetBudget:
         models.set_budget(user_id, "Food", "expense", 1000)
         models.set_budget(user_id, "food", "expense", 2000)
 
-        conn = sqlite3.connect(temp_db)
-        rows = conn.execute(
-            """
-            SELECT c.name, b.limit_amount
-            FROM budgets b JOIN categories c ON c.uuid = b.category_uuid
-            WHERE b.user_id = ?
-            """,
-            (user_id,),
-        ).fetchall()
-        conn.close()
+        with psycopg.connect(database.dsn(temp_db)) as conn:
+            rows = conn.execute(
+                """
+                SELECT c.name, b.limit_amount
+                FROM budgets b JOIN categories c ON c.uuid = b.category_uuid
+                WHERE b.user_id = %s
+                """,
+                (user_id,),
+            ).fetchall()
         assert rows == [("food", 2000)]
 
     def test_rejects_invalid_transaction_type(self, temp_db):

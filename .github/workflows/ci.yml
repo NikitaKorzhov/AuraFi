@@ -8,7 +8,29 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      PG_HOST: 127.0.0.1
+      PG_PORT: 5432
+      PG_DB: aurafi
+      PG_USER: postgres
+      PG_PASSWORD: postgres
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4  # Клонує ваш проєкт у середовище

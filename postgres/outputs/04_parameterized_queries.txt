@@ -1,0 +1,20 @@
+=== PARAMETERIZED QUERIES ===
+
+1) Inserting test data:
+Inserted: alice_wonderland
+
+2) SAFE lookup by username (parameterized):
+Found: (3, 'alice_wonderland', 'alice@example.com')
+
+3) UNSAFE code (illustration only — never run this):
+   SELECT * FROM users WHERE username = 'admin'; DROP TABLE users; --';
+   ^ string-concatenated like this, that literal input drops the table
+
+   The parameterized form, called with the exact same input:
+   cur.execute("SELECT * FROM users WHERE username = %s;", (dangerous_username,))
+   ^ psycopg sends it as DATA, not SQL — it just finds no matching username, safely
+
+4) Multi-parameter UPDATE and DELETE:
+Updated: bob_builder -> bob.new@example.com
+Deleted: bob_builder
+

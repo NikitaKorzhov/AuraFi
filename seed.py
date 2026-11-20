@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from datetime import date, timedelta
 
-from database import DB_PATH, init_db
+from database import drop_all_tables, init_db
 from models import (
     add_transaction,
     check_budget_status,
@@ -26,8 +26,7 @@ SEED_PASSWORD = os.environ.get("SEED_PASSWORD", "changeme123")
 def seed() -> int:
     """Resets the database and inserts one demo user (with a login email/password
     main.py's login prompt can be tested against) plus sample transactions and budgets."""
-    if os.path.exists(DB_PATH):
-        os.remove(DB_PATH)
+    drop_all_tables()
     init_db()
 
     user_id = create_user(SEED_USERNAME, SEED_EMAIL, SEED_PASSWORD)

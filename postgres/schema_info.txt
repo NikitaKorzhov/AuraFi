@@ -1,0 +1,70 @@
+=== \d users ===
+                                Table "public.users"
+    Column     |  Type   | Collation | Nullable |              Default              
+---------------+---------+-----------+----------+-----------------------------------
+ id            | integer |           | not null | nextval('users_id_seq'::regclass)
+ username      | text    |           | not null | 
+ email         | text    |           | not null | 
+ password_hash | text    |           | not null | 
+Indexes:
+    "users_pkey" PRIMARY KEY, btree (id)
+    "users_email_key" UNIQUE CONSTRAINT, btree (email)
+Referenced by:
+    TABLE "budgets" CONSTRAINT "budgets_user_id_fkey" FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    TABLE "transactions" CONSTRAINT "transactions_user_id_fkey" FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+
+
+=== \d categories ===
+                Table "public.categories"
+      Column      | Type | Collation | Nullable | Default 
+------------------+------+-----------+----------+---------
+ uuid             | text |           | not null | 
+ name             | text |           | not null | 
+ transaction_type | text |           | not null | 
+Indexes:
+    "categories_pkey" PRIMARY KEY, btree (uuid)
+Check constraints:
+    "categories_transaction_type_check" CHECK (transaction_type = ANY (ARRAY['income'::text, 'expense'::text]))
+Referenced by:
+    TABLE "budgets" CONSTRAINT "budgets_category_uuid_fkey" FOREIGN KEY (category_uuid) REFERENCES categories(uuid)
+    TABLE "transactions" CONSTRAINT "transactions_category_uuid_fkey" FOREIGN KEY (category_uuid) REFERENCES categories(uuid)
+
+
+=== \d transactions ===
+                                    Table "public.transactions"
+      Column      |     Type      | Collation | Nullable |                 Default                  
+------------------+---------------+-----------+----------+------------------------------------------
+ id               | integer       |           | not null | nextval('transactions_id_seq'::regclass)
+ amount           | numeric(12,2) |           | not null | 
+ transaction_type | text          |           | not null | 
+ category_uuid    | text          |           | not null | 
+ date             | date          |           | not null | 
+ description      | text          |           |          | 
+ user_id          | integer       |           | not null | 
+Indexes:
+    "transactions_pkey" PRIMARY KEY, btree (id)
+Check constraints:
+    "transactions_transaction_type_check" CHECK (transaction_type = ANY (ARRAY['income'::text, 'expense'::text]))
+Foreign-key constraints:
+    "transactions_category_uuid_fkey" FOREIGN KEY (category_uuid) REFERENCES categories(uuid)
+    "transactions_user_id_fkey" FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+
+
+=== \d budgets ===
+                         Table "public.budgets"
+    Column     |     Type      | Collation | Nullable |     Default     
+---------------+---------------+-----------+----------+-----------------
+ uuid          | text          |           | not null | 
+ period_type   | text          |           | not null | 'monthly'::text
+ limit_amount  | numeric(12,2) |           |          | 
+ user_id       | integer       |           | not null | 
+ category_uuid | text          |           | not null | 
+Indexes:
+    "budgets_pkey" PRIMARY KEY, btree (uuid)
+Check constraints:
+    "budgets_period_type_check" CHECK (period_type = ANY (ARRAY['monthly'::text, 'yearly'::text]))
+Foreign-key constraints:
+    "budgets_category_uuid_fkey" FOREIGN KEY (category_uuid) REFERENCES categories(uuid)
+    "budgets_user_id_fkey" FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+
+
