@@ -1,0 +1,139 @@
+=== Завдання 1: перевірка версії SQLAlchemy ===
+SQLAlchemy 2.0.58
+
+=== Завдання 2: перевірка підключення database.py ===
+PostgreSQL 18.7 (Postgres.app) on aarch64-apple-darwin23.6.0, compiled by Apple clang version 15.0.0 (clang-1500.3.9.4), 64-bit
+
+=== Завдання 3: перевірка синтаксису models.py ===
+models.py OK: ['User', 'Category', 'Transaction', 'Budget']
+
+=== Завдання 4: init_db.py ===
+Initializing database...
+Tables created successfully!
+
+Tables:
+  - users
+  - categories
+  - transactions
+  - budgets
+
+=== Завдання 4: перевірка таблиць у psql (\dt) ===
+            List of tables
+ Schema |     Name     | Type  | Owner 
+--------+--------------+-------+-------
+ public | budgets      | table | pk
+ public | categories   | table | pk
+ public | transactions | table | pk
+ public | users        | table | pk
+(4 rows)
+
+
+=== Завдання 5: crud_operations.py ===
+CREATE — user
+created: <User(id=4, username='crud_demo_user')>
+
+READ — by username
+found: <User(id=4, username='crud_demo_user')>
+
+UPDATE — email
+updated: <User(id=4, username='crud_demo_user')>
+
+CREATE — a category + transaction for this user
+created: <Transaction(id=6, amount=10.0, type=expense)>
+
+DELETE — transaction, category, user (FK order)
+transaction deleted: True
+user deleted: True
+
+=== Завдання 6: test_crud.py ===
+=== USER CRUD ===
+
+1) CREATE — adding a user
+created: id 5, ivan_test
+
+2) READ — fetching the user
+found: ivan_test (ivan_test@test.com)
+
+3) UPDATE — changing the email
+updated: ivan.new@test.com
+
+4) DELETE — removing the user
+deleted: True
+
+=== TRANSACTION CRUD ===
+
+1) CREATE — adding a transaction
+created: id 7, amount 50.0
+
+2) READ — fetching by user
+  - <Transaction(id=7, amount=50.0, type=expense)>
+
+3) DELETE — cleanup (FK order: transaction, category, user)
+cleaned up
+
+All CRUD demos completed successfully!
+
+=== Завдання 7: advanced_queries.py ===
+=== ADVANCED QUERIES ===
+
+Transaction counts by type: [('expense', 3), ('income', 2)]
+Transaction counts by user: [('nikita', 5)]
+Transactions matching 'food': []
+
+=== Завдання 8: migration_example.py ===
+=== COMPARISON: SQL vs ORM ===
+
+1. ADD USER
+   SQL: 10 lines (manual connection/cursor management)
+   ORM: 8 lines
+   Savings: 20%
+
+2. GET USERS
+   SQL: 7 lines (manual connection/cursor management)
+   ORM: 5 lines
+   Savings: 29%
+
+3. UPDATE USER
+   SQL: 7 lines (manual connection/cursor management)
+   ORM: 8 lines
+   Savings: -14%
+
+4. GET USER TRANSACTIONS (JOIN)
+   SQL: 14 lines (manual connection/cursor management)
+   ORM: 8 lines
+   Savings: 43%
+
+Running both versions against the real database to confirm they agree:
+
+SQL: user migration_demo_sql added
+ORM: user migration_demo_orm added
+
+SQL read: [{'id': 7, 'username': 'migration_demo_sql', 'email': 'migration_demo_sql@example.com'}, {'id': 8, 'username': 'migration_demo_orm', 'email': 'migration_demo_orm@example.com'}]
+ORM read: [{'id': 7, 'username': 'migration_demo_sql', 'email': 'migration_demo_sql@example.com'}, {'id': 8, 'username': 'migration_demo_orm', 'email': 'migration_demo_orm@example.com'}]
+ORM: user 8 updated
+
+cleaned up demo rows
+
+=== Завдання 9 (бонус): complex_relationships.py ===
+=== COMPLEX RELATIONSHIPS ===
+
+Transaction statistics: {'total_transactions': 5, 'distinct_users': 1, 'distinct_transaction_types': 2}
+Budget statistics: {'total_budgets': 7, 'total_limit_amount': 26500.0}
+
+Users with eager-loaded budgets (1):
+  - nikita: 7 budget(s)
+
+=== Завдання 10 (бонус): test_models_sqlite.py ===
+============================= test session starts ==============================
+platform darwin -- Python 3.9.6, pytest-8.4.2, pluggy-1.6.0 -- /Users/pk/projects/Python/AuraFi/aura_venv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/pk/projects/Python/AuraFi
+collecting ... collected 5 items
+
+orm_homework/test_models_sqlite.py::TestUserCrudOnSqlite::test_create_and_look_up_by_email PASSED [ 20%]
+orm_homework/test_models_sqlite.py::TestUserCrudOnSqlite::test_authenticate_user PASSED [ 40%]
+orm_homework/test_models_sqlite.py::TestUserCrudOnSqlite::test_duplicate_email_is_rejected PASSED [ 60%]
+orm_homework/test_models_sqlite.py::TestBudgetFlowOnSqlite::test_full_transaction_and_budget_flow PASSED [ 80%]
+orm_homework/test_models_sqlite.py::TestBudgetFlowOnSqlite::test_check_budget_status_month_filter_is_portable PASSED [100%]
+
+============================== 5 passed in 0.52s ===============================

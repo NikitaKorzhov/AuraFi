@@ -1,19 +1,20 @@
 from __future__ import annotations
 
 import os
-from contextlib import contextmanager
 from pathlib import Path
 
 import psycopg
 from psycopg import sql
+from sqlalchemy import create_engine
+from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from logger import get_logger
 
 log = get_logger(__name__)
 
 # Anchored to this file's directory (not the caller's cwd) so seed.py, main.py,
-# and any other entry point always agree on the same .env/init.sql regardless
-# of where they're launched from.
+# and any other entry point always agree on the same .env regardless of where
+# they're launched from.
 _BASE_DIR = Path(__file__).resolve().parent
 
 
@@ -41,12 +42,12 @@ PG_DB = os.environ.get("PG_DB", "aurafi")
 PG_USER = os.environ.get("PG_USER", os.environ.get("USER", "postgres"))
 PG_PASSWORD = os.environ.get("PG_PASSWORD", "")
 
-INIT_SQL_PATH = str(_BASE_DIR / "init.sql")
-
 
 def dsn(dbname: str | None = None) -> str:
-    """libpq keyword/value DSN. `password=` is omitted entirely when empty, so
-    a local trust-auth setup (e.g. Postgres.app) never sends a blank one."""
+    """libpq keyword/value DSN — still used by the raw-psycopg admin helper
+    below. CREATE DATABASE can't run through a SQLAlchemy Session (it can't
+    run inside a transaction block, and a session is bound to one already-
+    connected database), so creating/checking databases stays on psycopg."""
     parts = [
         f"host={PG_HOST}",
         f"port={PG_PORT}",
@@ -58,10 +59,17 @@ def dsn(dbname: str | None = None) -> str:
     return " ".join(parts)
 
 
+def database_url(dbname: str | None = None) -> str:
+    """SQLAlchemy engine URL for `dbname` (or PG_DB by default). Uses the
+    `postgresql+psycopg` dialect so the engine runs on the same psycopg3
+    driver as the admin helper above — one driver, not two."""
+    auth = PG_USER
+    if PG_PASSWORD:
+        auth += f":{PG_PASSWORD}"
+    return f"postgresql+psycopg://{auth}@{PG_HOST}:{PG_PORT}/{dbname or PG_DB}"
+
+
 def _create_database_if_missing(dbname: str) -> None:
-    """CREATE DATABASE can't run inside a transaction block and its name can't
-    be a bound parameter, so this connects to the maintenance `postgres`
-    database with autocommit and quotes the name via `sql.Identifier`."""
     with psycopg.connect(dsn("postgres"), autocommit=True) as conn:
         with conn.cursor() as cur:
             cur.execute("SELECT 1 FROM pg_database WHERE datname = %s", (dbname,))
@@ -69,82 +77,57 @@ def _create_database_if_missing(dbname: str) -> None:
                 cur.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(dbname)))
 
 
-def get_connection(dbname: str | None = None) -> psycopg.Connection:
-    """Opens a PostgreSQL connection to `dbname` (or PG_DB by default).
-
-    Logs and re-raises on failure (bad host/port, auth failure, unknown
-    database, server not running, etc.) so a connection problem is never
-    silently swallowed."""
-    try:
-        return psycopg.connect(dsn(dbname))
-    except psycopg.Error as e:
-        log.error(f"Failed to connect to database {dbname or PG_DB!r}: {e}")
-        raise
+class Base(DeclarativeBase):
+    """Declarative base every ORM model (see models.py) inherits from."""
 
 
-@contextmanager
-def db_connection(dbname: str | None = None):
-    """Opens a connection, yields it, and always closes it afterward.
+# Engine + session factory for the configured PG_DB. `pool_pre_ping` checks a
+# pooled connection is still alive before handing it out, so a connection the
+# server dropped (idle timeout, restart) doesn't surface as a confusing error
+# on the next otherwise-unrelated query.
+engine = create_engine(database_url(), echo=False, pool_pre_ping=True)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-    Any `psycopg.Error` raised while the connection is in use (query errors,
-    constraint violations, the server being unreachable, etc.) is logged here
-    before being re-raised, so every model function gets this handling for
-    free just by using `with db_connection() as conn:`.
+
+def get_session() -> Session:
+    """Opens a session, yields it, and always closes it afterward — for
+    callers that want dependency-injection-style usage:
+    `with contextlib.ExitStack() as stack: session = stack.enter_context(get_session())`.
+    models.py itself just uses `with SessionLocal() as session:` directly.
     """
-    conn = get_connection(dbname)
+    session = SessionLocal()
     try:
-        yield conn
-    except psycopg.Error as e:
-        log.error(f"Database error on {dbname or PG_DB!r}: {e}")
-        raise
+        yield session
     finally:
-        conn.close()
+        session.close()
 
 
-def _table_exists(conn: psycopg.Connection, table: str) -> bool:
-    with conn.cursor() as cur:
-        cur.execute(
-            "SELECT 1 FROM information_schema.tables "
-            "WHERE table_schema = 'public' AND table_name = %s",
-            (table,),
-        )
-        return cur.fetchone() is not None
+def make_engine(dbname: str):
+    """Builds a standalone engine bound to `dbname`, separate from the
+    module's default `engine`/`SessionLocal` — used by the test suite to
+    point at a throwaway database without touching the real one."""
+    return create_engine(database_url(dbname), pool_pre_ping=True)
 
 
-def _table_has_column(conn: psycopg.Connection, table: str, column: str) -> bool:
-    with conn.cursor() as cur:
-        cur.execute(
-            "SELECT 1 FROM information_schema.columns "
-            "WHERE table_schema = 'public' AND table_name = %s AND column_name = %s",
-            (table, column),
-        )
-        return cur.fetchone() is not None
+def init_db(dbname: str | None = None) -> None:
+    """Creates the target database if it doesn't exist yet, then creates
+    every table declared on `Base` (see models.py's User/Category/Transaction/
+    Budget) if it doesn't exist yet. Safe to call on every startup — table
+    creation is idempotent."""
+    _create_database_if_missing(dbname or PG_DB)
+    bind = engine if dbname is None else make_engine(dbname)
+    Base.metadata.create_all(bind=bind)
 
 
 def drop_all_tables(dbname: str | None = None) -> None:
-    """Drops the users/categories/transactions/budgets tables (if they exist)
-    so a subsequent init_db() recreates them empty. Used by seed.py to reset
-    the database the same way the old SQLite path did by deleting the file."""
-    _create_database_if_missing(dbname or PG_DB)
-    with db_connection(dbname) as conn:
-        with conn.cursor() as cur:
-            cur.execute("DROP TABLE IF EXISTS transactions, budgets, categories, users CASCADE")
-        conn.commit()
-
-
-def init_db(dbname: str | None = None, sql_path: str = INIT_SQL_PATH) -> None:
-    """Creates the target database if it doesn't exist yet, then creates the
-    users, categories, transactions and budgets tables if they don't exist
-    yet, by running the DDL in `init.sql`.
-    """
-    _create_database_if_missing(dbname or PG_DB)
-    with db_connection(dbname) as conn:
-        with open(sql_path, "r", encoding="utf-8") as f:
-            with conn.cursor() as cur:
-                cur.execute(f.read())
-        conn.commit()
+    """Drops every table declared on `Base`. Used by seed.py to reset the
+    database the same way the old SQLite path did by deleting the file."""
+    bind = engine if dbname is None else make_engine(dbname)
+    Base.metadata.drop_all(bind=bind)
 
 
 if __name__ == "__main__":
+    import models  # noqa: F401 — registers User/Category/Transaction/Budget on Base.metadata
+
     init_db()
-    print(f"Database initialized: {dsn()}")
+    print(f"Database initialized: {database_url()}")

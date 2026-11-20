@@ -2,6 +2,7 @@ import uuid
 
 import psycopg
 import pytest
+from sqlalchemy.exc import IntegrityError
 
 import database
 import models
@@ -49,7 +50,7 @@ class TestCreateUser:
     def test_duplicate_email_is_rejected(self, temp_db):
         """The `users.email` UNIQUE constraint must actually be enforced."""
         models.create_user("alice", "alice@example.com", "pw")
-        with pytest.raises(psycopg.errors.UniqueViolation):
+        with pytest.raises(IntegrityError):
             models.create_user("alice2", "alice@example.com", "other_pw")
 
     def test_password_is_not_stored_in_plaintext(self, temp_db):

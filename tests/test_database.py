@@ -1,10 +1,15 @@
+from __future__ import annotations
+
 import uuid as uuid_lib
 
 import psycopg
 import pytest
 from psycopg import sql
+from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError, OperationalError
 
 import database
+import models  # noqa: F401 — registers User/Category/Transaction/Budget on Base.metadata
 
 
 def _random_dbname() -> str:
@@ -70,10 +75,6 @@ class TestInitDb:
             count = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
         assert count == 1
 
-    def test_missing_init_sql_file_raises(self, fresh_dbname, tmp_path):
-        with pytest.raises(FileNotFoundError):
-            database.init_db(dbname=fresh_dbname, sql_path=str(tmp_path / "no_such.sql"))
-
     def test_creates_the_database_when_it_does_not_exist_yet(self, fresh_dbname):
         with psycopg.connect(database.dsn("postgres")) as conn:
             exists = conn.execute(
@@ -91,85 +92,42 @@ class TestInitDb:
 
 
 # ---------------------------------------------------------------------------
-# get_connection
+# make_engine / SQLAlchemy session basics
 # ---------------------------------------------------------------------------
 
-class TestGetConnection:
-    def test_returns_a_working_connection(self, fresh_dbname):
+class TestMakeEngine:
+    def test_returns_a_working_session(self, fresh_dbname):
         database.init_db(dbname=fresh_dbname)
-        conn = database.get_connection(fresh_dbname)
-        try:
-            assert conn.execute("SELECT 1").fetchone() == (1,)
-        finally:
-            conn.close()
+        engine = database.make_engine(fresh_dbname)
+        with engine.connect() as conn:
+            assert conn.execute(text("SELECT 1")).scalar() == 1
 
     def test_foreign_key_violation_is_rejected(self, fresh_dbname):
         """PostgreSQL enforces FOREIGN KEY constraints unconditionally, so a
         transaction referencing a non-existent user_id must be rejected
         rather than silently stored as orphaned data."""
         database.init_db(dbname=fresh_dbname)
+        engine = database.make_engine(fresh_dbname)
 
-        conn = database.get_connection(fresh_dbname)
-        try:
-            with pytest.raises(psycopg.errors.ForeignKeyViolation):
+        with engine.connect() as conn:
+            with pytest.raises(IntegrityError):
                 conn.execute(
-                    """
-                    INSERT INTO transactions
-                        (amount, transaction_type, category_uuid, date, description, user_id)
-                    VALUES (10, 'expense', 'nonexistent-category-uuid', '2026-01-01', '', 9999)
-                    """
+                    text(
+                        """
+                        INSERT INTO transactions
+                            (amount, transaction_type, category_uuid, date, description, user_id)
+                        VALUES (10, 'expense', 'nonexistent-category-uuid', '2026-01-01', '', 9999)
+                        """
+                    )
                 )
-        finally:
-            conn.close()
+                conn.commit()
 
-    def test_unknown_database_logs_and_raises(self, caplog):
-        import logging
-
+    def test_unknown_database_raises(self):
         bad_dbname = _random_dbname()  # never created
-        with caplog.at_level(logging.ERROR, logger="database"):
-            with pytest.raises(psycopg.Error):
-                database.get_connection(bad_dbname)
-        assert any("Failed to connect" in r.message for r in caplog.records)
-
-
-# ---------------------------------------------------------------------------
-# db_connection (context manager)
-# ---------------------------------------------------------------------------
-
-class TestDbConnection:
-    def test_closes_connection_on_success(self, fresh_dbname):
-        database.init_db(dbname=fresh_dbname)
-
-        with database.db_connection(fresh_dbname) as conn:
-            pass
-
-        with pytest.raises(psycopg.Error):
-            conn.execute("SELECT 1")
-
-    def test_closes_connection_even_when_body_raises(self, fresh_dbname):
-        """The connection must not leak (stay open) if the caller's code inside
-        the `with` block throws — e.g. a bad query."""
-        database.init_db(dbname=fresh_dbname)
-
-        held_conn = None
-        with pytest.raises(psycopg.errors.UndefinedTable):
-            with database.db_connection(fresh_dbname) as conn:
-                held_conn = conn
-                conn.execute("SELECT * FROM no_such_table")
-
-        with pytest.raises(psycopg.Error):
-            held_conn.execute("SELECT 1")
-
-    def test_query_error_is_logged(self, fresh_dbname, caplog):
-        import logging
-
-        database.init_db(dbname=fresh_dbname)
-
-        with caplog.at_level(logging.ERROR, logger="database"):
-            with pytest.raises(psycopg.errors.UndefinedTable):
-                with database.db_connection(fresh_dbname) as conn:
-                    conn.execute("SELECT * FROM no_such_table")
-        assert any("Database error" in r.message for r in caplog.records)
+        engine = database.make_engine(bad_dbname)
+        with pytest.raises(OperationalError):
+            with engine.connect():
+                pass
 
 
 # ---------------------------------------------------------------------------

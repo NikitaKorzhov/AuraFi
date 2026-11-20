@@ -110,7 +110,7 @@ class BudgetManager:
     an expense category can share the same name (e.g. both default category
     lists include "other"), and a plain string key would let one overwrite
     the other in this dict even though the database keeps them as distinct
-    rows (see `categories`/`budgets` in init.sql)."""
+    rows (see `models.Category`/`models.Budget`)."""
 
     def __init__(self, user_id: int):
         self.user_id = user_id

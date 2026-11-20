@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import uuid as uuid_lib
-from contextlib import contextmanager
 
 import psycopg
 import pytest
 from psycopg import sql
+from sqlalchemy.orm import sessionmaker
 
 import database
 import models
@@ -14,9 +14,9 @@ import models
 @pytest.fixture
 def temp_db(monkeypatch):
     """Creates a brand-new PostgreSQL database (random name, on the same
-    server as PG_HOST/PG_PORT), initializes its schema, and redirects every
-    models.py function to use it instead of the real PG_DB — by
-    monkeypatching the `db_connection` name models.py calls.
+    server as PG_HOST/PG_PORT), creates its tables from the ORM models, and
+    redirects every models.py function to use it instead of the real PG_DB —
+    by monkeypatching the `SessionLocal` name models.py calls.
 
     The database is dropped again after the test, so there is nothing to
     roll back manually and the real database is never touched.
@@ -27,17 +27,15 @@ def temp_db(monkeypatch):
         with conn.cursor() as cur:
             cur.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(dbname)))
 
-    database.init_db(dbname=dbname)
+    test_engine = database.make_engine(dbname)
+    database.Base.metadata.create_all(bind=test_engine)
+    test_session_factory = sessionmaker(autocommit=False, autoflush=False, bind=test_engine)
 
-    @contextmanager
-    def _db_connection(name: str = dbname):
-        with database.db_connection(name) as conn:
-            yield conn
-
-    monkeypatch.setattr(models, "db_connection", _db_connection)
+    monkeypatch.setattr(models, "SessionLocal", test_session_factory)
 
     yield dbname
 
+    test_engine.dispose()
     with psycopg.connect(database.dsn("postgres"), autocommit=True) as conn:
         with conn.cursor() as cur:
             cur.execute(
