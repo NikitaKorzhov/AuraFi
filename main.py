@@ -8,6 +8,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from database import init_db
 from expense_tracker import ExpenseTracker, Income, Expense
 from expense_tracker.cli import input_transaction
+from expense_tracker.models import User
 from models import authenticate_user, get_username_by_email
 from logger import get_logger
 from cli.output import Outer
@@ -40,6 +41,7 @@ def show_all_transactions_with_info(tracker: ExpenseTracker):
         f"Income sum: {tracker.calc_income()}, Expense sum: {tracker.calc_expense()}, total:{tracker.calc_balance()}"
     ).print()
     Outer.append_blue(f"{budget_line}").print()
+    Outer.append_purple(f"\n{tracker.spending_report()}").print()
 
 
 def add_transaction_entry(tracker: ExpenseTracker, transaction_type: str):
@@ -107,7 +109,8 @@ def login() -> int | None:
             continue
 
         if user_id is not None:
-            log.info(f"User '{username}' ({email}) logged in successfully")
+            user = User(username=username, email=email)
+            log.info(f"User {user.display()} logged in successfully")
             return user_id
 
         if username is not None:
