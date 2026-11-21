@@ -1,7 +1,7 @@
 import pytest
 
 import models
-from expense_tracker import Budget, Expense, ExpenseTracker, Income
+from expense_tracker import Budget, Expense, ExpenseTracker, Income, User
 
 
 # ---------------------------------------------------------------------------
@@ -48,6 +48,136 @@ class TestBudgetCheckLimit:
         budget = Budget("salary", "income", None)
         exceeded, spent = budget.check_limit([Expense(1_000_000, "salary")])
         assert exceeded is False
+
+
+# ---------------------------------------------------------------------------
+# Transaction.is_expense / formatted (Homework 22, Частина 2)
+# ---------------------------------------------------------------------------
+
+class TestTransactionFormatting:
+    def test_is_expense_true_for_expense(self):
+        assert Expense(50, "food").is_expense() is True
+
+    def test_is_expense_false_for_income(self):
+        assert Income(50, "salary").is_expense() is False
+
+    def test_formatted_income_has_plus_sign(self):
+        tx = Income(5000, "salary", date="2024-03-15")
+        assert tx.formatted() == "+ 5000.00 UAH [salary] 2024-03-15"
+
+    def test_formatted_expense_has_minus_sign(self):
+        tx = Expense(350, "food", date="2024-03-15")
+        assert tx.formatted() == "- 350.00 UAH [food] 2024-03-15"
+
+
+# ---------------------------------------------------------------------------
+# Budget.remaining / is_exceeded / utilization_pct (Homework 22, Частина 2)
+# ---------------------------------------------------------------------------
+
+class TestBudgetNewMethods:
+    def test_remaining_with_no_spending(self):
+        budget = Budget("food", "expense", 100)
+        assert budget.remaining([]) == 100
+
+    def test_remaining_after_spending(self):
+        budget = Budget("food", "expense", 100)
+        assert budget.remaining([Expense(30, "food")]) == 70
+
+    def test_remaining_can_go_negative(self):
+        budget = Budget("food", "expense", 100)
+        assert budget.remaining([Expense(150, "food")]) == -50
+
+    def test_remaining_is_none_without_limit(self):
+        budget = Budget("salary", "income", None)
+        assert budget.remaining([Expense(1000, "salary")]) is None
+
+    def test_is_exceeded_true_over_limit(self):
+        budget = Budget("food", "expense", 50)
+        assert budget.is_exceeded([Expense(50.01, "food")]) is True
+
+    def test_is_exceeded_false_at_limit(self):
+        """Boundary: spent == limit must not count as exceeded (strict '>')."""
+        budget = Budget("food", "expense", 50)
+        assert budget.is_exceeded([Expense(50, "food")]) is False
+
+    def test_utilization_pct_half_spent(self):
+        budget = Budget("food", "expense", 100)
+        assert budget.utilization_pct([Expense(50, "food")]) == 50.0
+
+    def test_utilization_pct_over_100_when_exceeded(self):
+        budget = Budget("food", "expense", 100)
+        assert budget.utilization_pct([Expense(150, "food")]) == 150.0
+
+    def test_utilization_pct_zero_without_limit(self):
+        budget = Budget("salary", "income", None)
+        assert budget.utilization_pct([]) == 0.0
+
+
+# ---------------------------------------------------------------------------
+# User (Homework 22, Частина 2)
+# ---------------------------------------------------------------------------
+
+class TestUserDataclass:
+    def test_display_format(self):
+        user = User("nikita", "nikita@example.com")
+        assert user.display() == "nikita <nikita@example.com>"
+
+    def test_default_currency(self):
+        assert User("a", "b@x.com").currency == "UAH"
+
+
+# ---------------------------------------------------------------------------
+# ExpenseTracker.spending_report (Homework 22, Частина 2 — filter/map/reduce/sorted)
+# ---------------------------------------------------------------------------
+
+class TestSpendingReport:
+    def test_includes_income_and_expense_lines_and_totals(self, temp_db):
+        user_id = models.create_user("alice", "alice@example.com", "pw", seed_default_categories=False)
+        tracker = ExpenseTracker.from_db(user_id)
+        tracker.add_transaction(Income(500, "salary", date="2024-01-01"))
+        tracker.add_transaction(Expense(120, "food", date="2024-01-02"))
+
+        report = tracker.spending_report()
+
+        assert "+ 500.00 UAH [salary] 2024-01-01" in report
+        assert "- 120.00 UAH [food] 2024-01-02" in report
+        assert "Доходи:  +500.00 UAH" in report
+        assert "Витрати: -120.00 UAH" in report
+        assert "Баланс:   380.00 UAH" in report
+
+    def test_sorted_by_amount_descending(self, temp_db):
+        user_id = models.create_user("alice", "alice@example.com", "pw", seed_default_categories=False)
+        tracker = ExpenseTracker.from_db(user_id)
+        tracker.add_transaction(Income(30, "gift"))
+        tracker.add_transaction(Income(900, "salary"))
+
+        report = tracker.spending_report()
+        assert report.index("900.00") < report.index("30.00")
+
+    def test_empty_tracker_shows_placeholder(self, temp_db):
+        user_id = models.create_user("alice", "alice@example.com", "pw", seed_default_categories=False)
+        tracker = ExpenseTracker.from_db(user_id)
+        assert "empty" in tracker.spending_report().lower()
+
+    def test_food_category_subsection_only_lists_food_expenses(self, temp_db):
+        user_id = models.create_user("alice", "alice@example.com", "pw", seed_default_categories=False)
+        tracker = ExpenseTracker.from_db(user_id)
+        tracker.add_transaction(Expense(100, "food", date="2024-01-01"))
+        tracker.add_transaction(Expense(40, "transport", date="2024-01-02"))
+
+        report = tracker.spending_report()
+
+        assert "Витрати [food]:" in report
+        assert "- 100.00 UAH [food] 2024-01-01" in report
+        food_section = report.split("Витрати [food]:")[1].split("\n\n")[0]
+        assert "transport" not in food_section
+
+    def test_no_food_subsection_when_no_food_expenses(self, temp_db):
+        user_id = models.create_user("alice", "alice@example.com", "pw", seed_default_categories=False)
+        tracker = ExpenseTracker.from_db(user_id)
+        tracker.add_transaction(Expense(40, "transport"))
+
+        assert "Витрати [food]" not in tracker.spending_report()
 
 
 # ---------------------------------------------------------------------------

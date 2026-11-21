@@ -70,6 +70,7 @@ PYTHONPATH=$PWD python -m pytest tests/ -v
   * ✅ Centralized database connection error handling and logging (`db_connection()`).
   * ✅ `.env`-based configuration for the PostgreSQL connection and seed login credentials.
   * ✅ Automated test suite with an isolated-DB fixture (`tests/conftest.py`'s `temp_db`, now backed by a throwaway PostgreSQL database per test) covering the full DB-backed flow.
+  * ✅ SQLAlchemy ORM (Homework 36) — `database.py`/root `models.py` migrated from raw `psycopg` SQL to a SQLAlchemy `Session`-based ORM layer (`User`/`Category`/`Transaction`/`Budget` declarative models); same function signatures and return shapes, so `expense_tracker/`/`main.py` needed zero changes — see `orm_homework/` for the standalone exercises this was built from.
   * ⬜ Currency conversion (multi-currency support / exchange rates).
   * ⬜ Monthly (not all-time) budget-limit enforcement when adding an expense.
 
@@ -116,10 +117,17 @@ PYTHONPATH=$PWD python -m pytest tests/ -v
 * **Test Suite Overhaul:** `tests/test_tracker.py`/`tests/test_transactions.py` (the JSON-era OOP tests) were replaced by `tests/test_expense_tracker.py` (same classes, now DB-backed), alongside new `tests/test_database.py`, `tests/test_models.py`, and `tests/test_main_db.py`. `tests/conftest.py`'s `temp_db` fixture gives every test its own throwaway database instead of touching the real one.
 * **PostgreSQL Migration (Homework 30):** `database.py`/root `models.py`/`init.sql` moved from SQLite to PostgreSQL via `psycopg` — same four tables, same columns, same constraints (only `INTEGER PRIMARY KEY AUTOINCREMENT` became `SERIAL PRIMARY KEY`, since Postgres has no `AUTOINCREMENT` keyword). `get_connection()`/`db_connection()` now take an optional `dbname` (server-side database name) instead of a SQLite file path, and `init_db()` creates that database on the server if it doesn't exist yet before running the DDL. `seed.py`'s reset is now `database.drop_all_tables()` + `init_db()` instead of deleting a file. `tests/conftest.py`'s `temp_db` fixture creates and drops a real, randomly-named PostgreSQL database per test for isolation. CI (`.github/workflows/ci.yml`) now runs a `postgres:16` service container alongside the test job. The standalone scripts this was built from (Homework 30's own Task 2-9 exercises) still live, unchanged, in `postgres/`.
 
+## 📌 Phase 5 Branch Progress
+* **SQLAlchemy ORM (Homework 36):** `database.py` now builds a SQLAlchemy `engine`/`SessionLocal` (`postgresql+psycopg://` dialect — same psycopg3 driver, not a second one) instead of managing raw `psycopg` connections; `init.sql` is gone, replaced by `Base.metadata.create_all()` against the ORM models. `make_engine(dbname)` builds a one-off engine for a different database, used by the test fixture. The raw-psycopg admin helper for `CREATE DATABASE` stays, since that can't run through a session bound to one already-connected database.
+* **ORM Models:** Root `models.py` now declares `User`/`Category`/`Transaction`/`Budget` as SQLAlchemy declarative models (with `relationship()`s), and every one of its 11 CRUD functions (`create_user`, `add_transaction`, `get_balance`, `check_budget_status`, etc.) was rewritten to query through a `Session` instead of raw SQL — **same signatures and return shapes as before**, so `expense_tracker/` and `main.py` needed zero code changes. Column types stay engine-generic (`Text`/`Float`, not Postgres-specific types) and the current-month filter in `check_budget_status` uses a portable `LIKE` prefix match instead of Postgres' `SUBSTRING()` — both deliberately, so the exact same models/functions also run unchanged against SQLite (see `orm_homework/test_models_sqlite.py`).
+* **Error Handling:** `main.py` now catches `sqlalchemy.exc.SQLAlchemyError` (plus raw `psycopg.Error` specifically around `init_db()`, since its `CREATE DATABASE` step is still psycopg-level) instead of `psycopg.Error` everywhere.
+* **Test Suite Updated:** `tests/conftest.py`'s `temp_db` fixture now creates its throwaway database's tables via `Base.metadata.create_all()` and monkeypatches `models.SessionLocal` (rather than a raw connection function). `tests/test_database.py` was rewritten around the new engine/session API; `tests/test_models.py` needed exactly one changed line (`psycopg.errors.UniqueViolation` → `sqlalchemy.exc.IntegrityError`, since the ORM wraps driver errors in its own exception type) — everything else kept passing unchanged, since those tests exercise the public `models.py` API, not its internals.
+* **Standalone Exercises:** `orm_homework/` — `crud_operations.py` (class-based `UserCRUD`/`TransactionCRUD`, reusing the same ORM models), `advanced_queries.py` (`joinedload`/`selectinload` eager-loading examples, which nothing in the live app needed before), `init_db.py`, `test_crud.py`, and `test_models_sqlite.py` (the cross-engine portability proof above). See `orm_homework/README.md`.
+
 ## 🛠 Tech Stack (Evolutionary)
 * **Language:** Python
 * **Backend:** Django, Django REST Framework (upcoming)
-* **Database:** PostgreSQL (implemented, Phase 4-5; migrated from the earlier SQLite implementation)
+* **Database:** PostgreSQL (implemented, Phase 4-5; migrated from the earlier SQLite implementation) via SQLAlchemy ORM (Phase 5, Homework 36; raw `psycopg` before that)
 * **Testing:** Pytest
 * **CI/CD:** GitHub Actions
 

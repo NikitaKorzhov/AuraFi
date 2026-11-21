@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from functools import reduce
+
 import models as db
 from decorators import currency_aware, log_transaction
 from expense_tracker.models import Budget, Expense, Income, Transaction, to_display
@@ -86,6 +88,37 @@ class ExpenseTracker:
     def calc_expense(self) -> float | int:
         return to_display(sum(x.amount_kopecks for x in self.transactions if isinstance(x, Expense)))
 
+    def spending_report(self) -> str:
+        """Homework 22, Частина 2: the same transaction list, processed in a
+        functional style (filter/map/reduce/sorted) instead of the plain
+        list comprehensions `calc_income`/`calc_expense` already use above —
+        shown alongside them, not replacing the tested, working originals."""
+        expenses = list(filter(lambda t: t.is_expense(), self.transactions))
+        incomes = list(filter(lambda t: not t.is_expense(), self.transactions))
+
+        by_amount = sorted(self.transactions, key=lambda t: t.amount_kopecks, reverse=True)
+        lines = list(map(lambda t: t.formatted(), by_amount))
+
+        total_expenses_kopecks = reduce(
+            lambda acc, kop: acc + kop, map(lambda t: t.amount_kopecks, expenses), 0
+        )
+        total_income_kopecks = reduce(
+            lambda acc, kop: acc + kop, map(lambda t: t.amount_kopecks, incomes), 0
+        )
+
+        food_expenses = list(map(
+            lambda t: t.formatted(),
+            filter(lambda t: t.category.lower() == "food", expenses),
+        ))
+
+        report = "\n".join(lines) if lines else "📭 List is empty."
+        if food_expenses:
+            report += "\n\nВитрати [food]:\n" + "\n".join(food_expenses)
+        report += f"\n\nДоходи:  +{to_display(total_income_kopecks):.2f} UAH"
+        report += f"\nВитрати: -{to_display(total_expenses_kopecks):.2f} UAH"
+        report += f"\nБаланс:   {to_display(total_income_kopecks - total_expenses_kopecks):.2f} UAH"
+        return report
+
     def __str__(self) -> str:
         """Returns a formatted text table of transactions with their numbers."""
         if not self.transactions:
@@ -110,7 +143,7 @@ class BudgetManager:
     an expense category can share the same name (e.g. both default category
     lists include "other"), and a plain string key would let one overwrite
     the other in this dict even though the database keeps them as distinct
-    rows (see `categories`/`budgets` in init.sql)."""
+    rows (see `models.Category`/`models.Budget`)."""
 
     def __init__(self, user_id: int):
         self.user_id = user_id
