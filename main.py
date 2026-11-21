@@ -1,10 +1,17 @@
 from __future__ import annotations
 
+import csv
 import getpass
+import json as json_module
+import sys
+from datetime import date as date_cls
+from pathlib import Path
 
 import psycopg
 from sqlalchemy.exc import SQLAlchemyError
 
+from cli_commands import build_parser
+from config import get_settings
 from database import init_db
 from expense_tracker import ExpenseTracker, Income, Expense
 from expense_tracker.cli import input_transaction
@@ -167,5 +174,137 @@ def main():
             Outer.append_red(f"Database error, please try again later: {e}").print()
 
 
+def export_transactions(transactions: list, fmt: str, export_dir: str) -> None:
+    """Homework 23: writes `transactions` out as CSV or JSON under `export_dir`
+    (created if missing). `.value` is used explicitly for transaction_type —
+    a bare `str(TransactionType.INCOME)` prints 'TransactionType.INCOME', not
+    'income' (verified); every serializer here must get the plain value."""
+    out_dir = Path(export_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / f"transactions.{fmt}"
+
+    if fmt == "csv":
+        with open(out_path, "w", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            writer.writerow(["id", "date", "type", "category", "amount", "description"])
+            for t in transactions:
+                writer.writerow([t.id, t.date, t.type_name.value, t.category, t.amount, t.description])
+    else:
+        data = [
+            {
+                "id": t.id,
+                "date": t.date,
+                "type": t.type_name.value,
+                "category": t.category,
+                "amount": t.amount,
+                "description": t.description,
+            }
+            for t in transactions
+        ]
+        with open(out_path, "w", encoding="utf-8") as f:
+            json_module.dump(data, f, ensure_ascii=False, indent=2)
+
+    print(f"📤 Експортовано {len(transactions)} транзакцій у {out_path}")
+
+
+def dispatch_command(args, tracker: ExpenseTracker, settings: dict) -> None:
+    """The actual command logic, separated from `run_cli()`'s argv-parsing and
+    `init_db()`/`ExpenseTracker.from_db()` bootstrapping below so it can be
+    unit-tested directly (build `args` via `build_parser().parse_args([...])`,
+    `tracker` via the `temp_db` fixture) without touching the real database."""
+    currency = settings["base_currency"]
+
+    if args.command == "add":
+        tx_class = Income if args.transaction_type == "income" else Expense
+        date = args.date or date_cls.today().isoformat()
+        transaction = tx_class(args.amount, args.category, date=date, description=args.desc)
+        if args.dry_run:
+            print(f"[DRY RUN] Додано б: {transaction.formatted()} — зміни не збережено")
+            return
+        try:
+            tracker.add_transaction(transaction)
+        except ValueError as e:
+            print(f"❌ {e}")
+            return
+        print(f"✅ {transaction.formatted()} додано (id={transaction.id})")
+
+    elif args.command == "list":
+        transactions = tracker.transactions
+        if args.transaction_type:
+            transactions = [t for t in transactions if t.type_name == args.transaction_type]
+        if args.category:
+            transactions = [t for t in transactions if t.category.lower() == args.category.lower()]
+        if args.month:
+            transactions = [t for t in transactions if (t.date or "").startswith(args.month)]
+
+        if not transactions:
+            print("📋 Транзакцій не знайдено")
+        for t in transactions:
+            print(f"[{t.id}] {t.formatted()}")
+
+    elif args.command == "balance":
+        print(f"💰 Баланс: {tracker.calc_balance():.2f} {currency}")
+
+    elif args.command == "report":
+        month = args.month or date_cls.today().strftime("%Y-%m")
+        monthly = [t for t in tracker.transactions if (t.date or "").startswith(month)]
+        income_total = sum((t.amount for t in monthly if not t.is_expense()), 0.0)
+        expense_total = sum((t.amount for t in monthly if t.is_expense()), 0.0)
+        print(f"📊 Звіт за {month}")
+        print(f"Доходи:  +{income_total:.2f} {currency}")
+        print(f"Витрати: -{expense_total:.2f} {currency}")
+        print(f"Баланс:   {income_total - expense_total:.2f} {currency}")
+
+    elif args.command == "delete":
+        if args.dry_run:
+            print(f"[DRY RUN] Видалено б транзакцію #{args.id} — зміни не збережено")
+            return
+        for i, t in enumerate(tracker.transactions, start=1):
+            if t.id == args.id:
+                tracker.remove_transaction(i)
+                print(f"🗑️  Транзакцію #{args.id} видалено")
+                return
+        print(f"🗑️  Транзакцію #{args.id} не знайдено")
+
+    elif args.command == "budget":
+        if args.budget_command == "set":
+            if args.dry_run:
+                print(
+                    f"[DRY RUN] Встановлено б ліміт для '{args.category}': "
+                    f"{args.limit} {currency} — зміни не збережено"
+                )
+                return
+            tracker.set_budget(args.category, "expense", args.limit)
+            print(f"📌 Ліміт для '{args.category}': {args.limit} {currency}")
+
+        elif args.budget_command == "show":
+            budgets = [b for b in tracker.budget_manager.budgets.values() if b.transaction_type == "expense"]
+            if not budgets:
+                print("📊 Бюджетів не встановлено")
+            for budget in budgets:
+                pct = budget.utilization_pct(tracker.transactions)
+                remaining = budget.remaining(tracker.transactions)
+                warning = " ⚠️" if pct >= settings["warn_budget_pct"] else ""
+                print(f"• {budget.category}: {pct}% використано, залишок {remaining} {currency}{warning}")
+
+    elif args.command == "export":
+        export_transactions(tracker.transactions, args.format, settings["export_dir"])
+
+
+def run_cli() -> None:
+    """Homework 23: the one-shot CLI (`python main.py add income --amount 5000
+    --category Salary`) — an alternative to `main()`'s interactive menu above,
+    built on the exact same ExpenseTracker/Transaction/Budget methods (nothing
+    here re-implements business logic that already exists)."""
+    settings = get_settings()
+    args = build_parser().parse_args()
+    init_db()
+    tracker = ExpenseTracker.from_db(args.user_id)
+    dispatch_command(args, tracker, settings)
+
+
 if __name__ == "__main__":
-    main()
+    if len(sys.argv) > 1:
+        run_cli()
+    else:
+        main()

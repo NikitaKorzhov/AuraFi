@@ -4,6 +4,7 @@ aura_venv/
 venv/
 aurafi.db
 log.txt
+exports/
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
